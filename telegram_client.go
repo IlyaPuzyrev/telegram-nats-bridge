@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -37,7 +38,8 @@ func NewTelegramClient(token string, logger *slog.Logger) *TelegramClient {
 		SetBaseURL(baseURL).
 		SetTimeout(60 * time.Second).
 		SetRetryCount(3).
-		SetRetryWaitTime(1 * time.Second)
+		SetRetryWaitTime(1 * time.Second).
+		SetLogger(nil) // Disable resty's default logging
 
 	return &TelegramClient{
 		client:  client,
@@ -86,6 +88,10 @@ func (c *TelegramClient) GetUpdatesWithTimeout(ctx context.Context, offset int64
 		Get("/getUpdates")
 
 	if err != nil {
+		// Don't log context cancellation as an error
+		if errors.Is(err, context.Canceled) {
+			return nil, err
+		}
 		c.logger.Error("failed to get updates", "error", err)
 		return nil, fmt.Errorf("failed to get updates: %w", err)
 	}
@@ -132,6 +138,10 @@ func (c *TelegramClient) GetMe(ctx context.Context) (*User, error) {
 		Get("/getMe")
 
 	if err != nil {
+		// Don't log context cancellation as an error
+		if errors.Is(err, context.Canceled) {
+			return nil, err
+		}
 		c.logger.Error("failed to get bot info", "error", err)
 		return nil, fmt.Errorf("failed to get bot info: %w", err)
 	}

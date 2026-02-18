@@ -190,8 +190,11 @@ func checkBot(cmd *cobra.Command, args []string) {
 
 		updates, err := client.GetUpdates(ctx, offset)
 		if err != nil {
-			if ctx.Err() != nil {
+			// Check if this is a graceful shutdown
+			select {
+			case <-ctx.Done():
 				return
+			default:
 			}
 			fmt.Fprintf(os.Stderr, "Error: failed to get updates: %v\n", err)
 			time.Sleep(5 * time.Second)
