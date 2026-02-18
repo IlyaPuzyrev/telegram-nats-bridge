@@ -1,0 +1,17 @@
+version: '3'
+
+tasks:
+  build:
+    desc: Build the binary
+    cmds:
+      - go build -o telegram-nats-bridge .
+
+  run:
+    desc: Run for development
+    cmds:
+      - go run . run
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test ./...
