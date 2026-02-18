@@ -13,6 +13,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// getLogLevel returns slog.Level from LOG_LEVEL env variable, defaults to WARN
+func getLogLevel() slog.Level {
+	levelStr := os.Getenv("LOG_LEVEL")
+	switch levelStr {
+	case "DEBUG":
+		return slog.LevelDebug
+	case "INFO":
+		return slog.LevelInfo
+	case "WARN", "WARNING":
+		return slog.LevelWarn
+	case "ERROR":
+		return slog.LevelError
+	default:
+		return slog.LevelWarn
+	}
+}
+
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "telegram-nats-bridge",
@@ -33,7 +50,7 @@ func main() {
 	checkBotCmd := &cobra.Command{
 		Use:   "bot",
 		Short: "Check bot connection and print updates as JSON",
-		Run:   checkBot,
+		RunE:  checkBot,
 	}
 
 	checkCmd.AddCommand(checkBotCmd)
@@ -48,7 +65,7 @@ func main() {
 func runBridge(cmd *cobra.Command, args []string) {
 	// Initialize logger
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
+		Level: getLogLevel(),
 	}))
 
 	// Get Telegram bot token from environment
@@ -134,17 +151,17 @@ func runBridge(cmd *cobra.Command, args []string) {
 	}
 }
 
-func checkBot(cmd *cobra.Command, args []string) {
-	// Initialize logger ( quieter for check command )
+func checkBot(cmd *cobra.Command, args []string) error {
+	// Initialize logger
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelWarn,
+		Level: getLogLevel(),
 	}))
 
 	// Get Telegram bot token from environment
 	token := os.Getenv("TELEGRAM_BOT_TOKEN")
 	if token == "" {
-		fmt.Fprintf(os.Stderr, "Error: TELEGRAM_BOT_TOKEN environment variable is required\n")
-		os.Exit(1)
+		logger.Error("TELEGRAM_BOT_TOKEN environment variable is required")
+		return fmt.Errorf("TELEGRAM_BOT_TOKEN environment variable is required")
 	}
 
 	// Create Telegram client
@@ -156,12 +173,12 @@ func checkBot(cmd *cobra.Command, args []string) {
 
 	botInfo, err := client.GetMe(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: failed to get bot info: %v\n", err)
-		os.Exit(1)
+		logger.Error("failed to get bot info", "error", err)
+		return fmt.Errorf("failed to get bot info: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Bot connected: @%s (ID: %d)\n", botInfo.Username, botInfo.ID)
-	fmt.Fprintf(os.Stderr, "Send a message to the bot to see JSON output. Press Ctrl+C to exit.\n\n")
+	logger.Info("bot connected", "username", botInfo.Username, "id", botInfo.ID)
+	logger.Info("send a message to the bot to see JSON output, press Ctrl+C to exit")
 
 	// Setup graceful shutdown
 	ctx, cancel = context.WithCancel(context.Background())
@@ -172,7 +189,7 @@ func checkBot(cmd *cobra.Command, args []string) {
 
 	go func() {
 		<-sigChan
-		fmt.Fprintf(os.Stderr, "\nShutting down...\n")
+		logger.Info("shutting down...")
 		cancel()
 	}()
 
@@ -184,7 +201,7 @@ func checkBot(cmd *cobra.Command, args []string) {
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		default:
 		}
 
@@ -193,10 +210,10 @@ func checkBot(cmd *cobra.Command, args []string) {
 			// Check if this is a graceful shutdown
 			select {
 			case <-ctx.Done():
-				return
+				return nil
 			default:
 			}
-			fmt.Fprintf(os.Stderr, "Error: failed to get updates: %v\n", err)
+			logger.Error("failed to get updates", "error", err)
 			time.Sleep(5 * time.Second)
 			continue
 		}
@@ -204,7 +221,7 @@ func checkBot(cmd *cobra.Command, args []string) {
 		for _, update := range updates {
 			// Output update as JSON
 			if err := encoder.Encode(update); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: failed to encode update: %v\n", err)
+				logger.Error("failed to encode update", "error", err)
 			}
 			fmt.Println() // Empty line between updates
 
