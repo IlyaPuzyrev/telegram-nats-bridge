@@ -27,6 +27,12 @@ go.work.sum
 # env file
 .env
 
+# Binary output directory
+.bin/
+
+# Plans directory
+.plans/
+
 # Editor/IDE
 # .idea/
 # .vscode/

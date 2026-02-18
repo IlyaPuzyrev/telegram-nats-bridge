@@ -1,15 +1,23 @@
 version: '3'
 
+dotenv: ['.env']
+
 tasks:
   build:
-    desc: Build the binary
+    desc: Build the binary to .bin/
     cmds:
-      - go build -o telegram-nats-bridge .
+      - mkdir -p .bin
+      - go build -o .bin/telegram-nats-bridge .
 
   run:
     desc: Run for development
     cmds:
       - go run . run
+
+  check-bot:
+    desc: Check bot and print updates as JSON
+    cmds:
+      - go run . check bot
 
   test:
     desc: Run tests
