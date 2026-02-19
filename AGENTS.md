@@ -15,6 +15,33 @@
 ./telegram-nats-bridge check bot --config config.yaml
 ```
 
+## Локальное тестирование с NATS
+
+Для локального тестирования используется Docker Compose с NATS сервером:
+
+```bash
+# Запуск NATS сервера
+task nats-up
+
+# Проверка статуса
+open http://localhost:8222
+
+# Подписка на тему (в отдельном терминале)
+task nats-sub
+# или с другой темой:
+docker run --rm -it --network host natsio/nats-box nats sub "your.subject"
+
+# Запуск bridge (в другом терминале)
+task run
+
+# Остановка NATS
+task nats-down
+```
+
+**Docker Compose:** Используется `docker-compose.yaml` (или `docker-compose.example.yaml` как шаблон).
+- Порт 4222: клиентские подключения
+- Порт 8222: HTTP мониторинг
+
 ## Структура проекта
 
 Плоская структура, один общий package. Все файлы в корне проекта.

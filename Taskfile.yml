@@ -23,3 +23,18 @@ tasks:
     desc: Run tests
     cmds:
       - go test ./...
+
+  nats-sub:
+    desc: Subscribe to NATS subject (requires running nats container)
+    cmds:
+      - docker run --rm -it --network host natsio/nats-box nats sub telegram.updates
+
+  nats-up:
+    desc: Start NATS server with Docker Compose
+    cmds:
+      - docker compose -f docker-compose.example.yaml up -d
+
+  nats-down:
+    desc: Stop NATS server
+    cmds:
+      - docker compose -f docker-compose.example.yaml down
