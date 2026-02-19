@@ -33,6 +33,9 @@ go.work.sum
 # Plans directory
 .plans/
 
+# Local config (use config.example.yaml as template)
+config.yaml
+
 # Editor/IDE
 # .idea/
 # .vscode/

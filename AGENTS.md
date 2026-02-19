@@ -27,7 +27,7 @@ task nats-up
 open http://localhost:8222
 
 # Подписка на тему (в отдельном терминале)
-task nats-sub
+task nats-box -- nats sub telegram.updates
 # или с другой темой:
 docker run --rm -it --network host natsio/nats-box nats sub "your.subject"
 
