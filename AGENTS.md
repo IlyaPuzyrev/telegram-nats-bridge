@@ -38,7 +38,7 @@ task run
 task nats-down
 ```
 
-**Docker Compose:** Используется `docker-compose.yaml` (или `docker-compose.example.yaml` как шаблон).
+**Docker Compose:** Используется `docker-compose.yaml`.
 - Порт 4222: клиентские подключения
 - Порт 8222: HTTP мониторинг
 

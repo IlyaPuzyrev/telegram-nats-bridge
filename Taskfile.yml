@@ -32,9 +32,9 @@ tasks:
   nats-up:
     desc: Start NATS server with Docker Compose
     cmds:
-      - docker compose -f docker-compose.example.yaml up -d
+      - docker compose up -d
 
   nats-down:
     desc: Stop NATS server
     cmds:
-      - docker compose -f docker-compose.example.yaml down
+      - docker compose down
