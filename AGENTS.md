@@ -6,11 +6,13 @@
 
 - `task build` — сборка бинарника
 - `task test` — запуск тестов (`go test ./...`)
-- `task run` — запуск для разработки
+- `task run` — запуск bridge с config.yaml
+- `task check-bot` — проверка бота и вывод updates в JSON
 
 Запуск утилиты:
 ```bash
 ./telegram-nats-bridge run --config config.yaml
+./telegram-nats-bridge check bot --config config.yaml
 ```
 
 ## Структура проекта
@@ -24,7 +26,7 @@
 | `github.com/go-resty/resty/v2` | HTTP клиент для Telegram API |
 | `github.com/nats-io/nats.go` | NATS клиент |
 | `github.com/spf13/cobra` | CLI фреймворк |
-| `github.com/spf13/viper` | Чтение env переменных |
+| `github.com/spf13/viper` | Чтение YAML конфига |
 | `github.com/stretchr/testify` | Тестирование |
 
 ## Конфигурация
@@ -32,13 +34,29 @@
 **Env переменные:**
 - `TELEGRAM_BOT_TOKEN` — токен Telegram бота
 - `NATS_URL` — URL NATS сервера
-- `NATS_CREDENTIALS` — опционально, путь к credentials файлу
 
-**YAML конфиг:** путь передаётся через флаг `--config`, содержит маппинг событий в NATS subjects (структура будет определена позже).
+**YAML конфиг:** путь передаётся через флаг `--config`
+
+```yaml
+# Обязательное поле: NATS subject для публикации updates
+subject: telegram.updates
+
+# Опционально: можно задать здесь вместо env
+# telegram_token: "..."
+# nats_url: "nats://localhost:4222"
+```
+
+**Приоритет:**
+- `subject` — только из YAML
+- `telegram_token` и `nats_url` — из YAML или env (viper объединяет)
 
 ## CLI
 
-Одна команда: `run`. Graceful shutdown реализован через механизмы cobra.
+Команды:
+- `run` — запуск bridge (требует `--config`)
+- `check bot` — проверка бота и вывод updates (требует `--config`)
+
+Graceful shutdown реализован через механизмы cobra.
 
 ## Логирование
 
@@ -47,6 +65,10 @@
 ## Тестирование
 
 Запуск через `task test`, используем `testify` для assertions.
+
+## Типы данных
+
+**Update** представлен как `map[string]any` (раньше был struct), что позволяет гибко работать с любым содержимым от Telegram API без жёсткой типизации всех полей.
 
 ## Получение обновлений (Updates)
 

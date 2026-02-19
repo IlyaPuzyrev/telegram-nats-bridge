@@ -10,14 +10,14 @@ tasks:
       - go build -o .bin/telegram-nats-bridge .
 
   run:
-    desc: Run for development
+    desc: Run for development (requires config.yaml)
     cmds:
-      - go run . run
+      - go run . run --config config.yaml
 
   check-bot:
-    desc: Check bot and print updates as JSON
+    desc: Check bot and print updates as JSON (requires config.yaml)
     cmds:
-      - go run . check bot
+      - go run . check bot --config config.yaml
 
   test:
     desc: Run tests

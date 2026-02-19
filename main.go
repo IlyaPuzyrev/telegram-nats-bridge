@@ -41,6 +41,7 @@ func main() {
 		Short: "Run the bridge",
 		Run:   runBridge,
 	}
+	runCmd.Flags().String("config", "", "Path to configuration file (required)")
 
 	checkCmd := &cobra.Command{
 		Use:   "check",
@@ -52,6 +53,7 @@ func main() {
 		Short: "Check bot connection and print updates as JSON",
 		RunE:  checkBot,
 	}
+	checkBotCmd.Flags().String("config", "", "Path to configuration file (required)")
 
 	checkCmd.AddCommand(checkBotCmd)
 	rootCmd.AddCommand(runCmd, checkCmd)
@@ -68,21 +70,48 @@ func runBridge(cmd *cobra.Command, args []string) {
 		Level: getLogLevel(),
 	}))
 
-	// Get Telegram bot token from environment
-	token := os.Getenv("TELEGRAM_BOT_TOKEN")
-	if token == "" {
-		logger.Error("TELEGRAM_BOT_TOKEN environment variable is required")
+	// Get config path from flag
+	configPath, err := cmd.Flags().GetString("config")
+	if err != nil {
+		logger.Error("failed to get config flag", "error", err)
 		os.Exit(1)
 	}
 
+	if configPath == "" {
+		logger.Error("--config flag is required")
+		os.Exit(1)
+	}
+
+	// Validate config path
+	if err := ValidateConfigPath(configPath); err != nil {
+		logger.Error("invalid config path", "error", err)
+		os.Exit(1)
+	}
+
+	// Load configuration
+	cfg, err := LoadConfig(configPath, logger)
+	if err != nil {
+		logger.Error("failed to load config", "error", err)
+		os.Exit(1)
+	}
+
+	// Validate configuration
+	if err := cfg.Validate(); err != nil {
+		logger.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
+
+	// Get Telegram token from config (loaded from env or YAML)
+	token := cfg.TelegramToken
+
 	// Create Telegram client
-	client := NewTelegramClient(token, logger)
+	tgClient := NewTelegramClient(token, logger)
 
 	// Test: Get bot info
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	botInfo, err := client.GetMe(ctx)
+	botInfo, err := tgClient.GetMe(ctx)
 	if err != nil {
 		logger.Error("failed to get bot info", "error", err)
 		os.Exit(1)
@@ -93,8 +122,22 @@ func runBridge(cmd *cobra.Command, args []string) {
 		"username", botInfo.Username,
 		"name", botInfo.FirstName)
 
-	// Test: Get updates
-	logger.Info("starting to poll for updates...")
+	// Create and connect NATS client
+	natsClient := NewNATSClient(cfg.NATSURL, logger)
+
+	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := natsClient.Connect(ctx); err != nil {
+		logger.Error("failed to connect to NATS", "error", err)
+		os.Exit(1)
+	}
+	defer natsClient.Close()
+
+	logger.Info("NATS connected", "url", cfg.NATSURL)
+
+	// Start polling for updates
+	logger.Info("starting to poll for updates...", "subject", cfg.Subject)
 
 	// Setup graceful shutdown
 	ctx, cancel = context.WithCancel(context.Background())
@@ -109,7 +152,7 @@ func runBridge(cmd *cobra.Command, args []string) {
 		cancel()
 	}()
 
-	// Poll for updates
+	// Poll for updates and publish to NATS
 	var offset int64 = 0
 	for {
 		select {
@@ -119,30 +162,39 @@ func runBridge(cmd *cobra.Command, args []string) {
 		default:
 		}
 
-		updates, err := client.GetUpdates(ctx, offset)
+		updates, nextOffset, err := tgClient.GetUpdates(ctx, offset)
 		if err != nil {
+			// Check if this is a graceful shutdown
+			select {
+			case <-ctx.Done():
+				logger.Info("shutdown complete")
+				return
+			default:
+			}
 			logger.Error("failed to get updates", "error", err)
 			time.Sleep(5 * time.Second)
 			continue
 		}
 
 		for _, update := range updates {
-			logger.Info("received update",
-				"update_id", update.UpdateID,
-				"has_message", update.Message != nil)
-
-			if update.Message != nil && update.Message.Text != "" {
-				logger.Info("message received",
-					"chat_id", update.Message.Chat.ID,
-					"from", update.Message.From.Username,
-					"text", update.Message.Text)
+			var updateID int64
+			if idNum, ok := update["update_id"].(json.Number); ok {
+				updateID, _ = idNum.Int64()
 			}
+			_, hasMessage := update["message"]
+			logger.Info("received update",
+				"update_id", updateID,
+				"has_message", hasMessage)
 
-			// Update offset to get next batch
-			if update.UpdateID >= offset {
-				offset = update.UpdateID + 1
+			// Publish update to NATS
+			if err := natsClient.Publish(ctx, cfg.Subject, update); err != nil {
+				logger.Error("failed to publish update to NATS", "error", err, "update_id", updateID)
+				// Continue processing other updates, don't stop on publish error
 			}
 		}
+
+		// Update offset for next poll
+		offset = nextOffset
 
 		if len(updates) == 0 {
 			// No updates, short sleep before next poll
@@ -157,15 +209,39 @@ func checkBot(cmd *cobra.Command, args []string) error {
 		Level: getLogLevel(),
 	}))
 
-	// Get Telegram bot token from environment
-	token := os.Getenv("TELEGRAM_BOT_TOKEN")
-	if token == "" {
-		logger.Error("TELEGRAM_BOT_TOKEN environment variable is required")
-		return fmt.Errorf("TELEGRAM_BOT_TOKEN environment variable is required")
+	// Get config path from flag
+	configPath, err := cmd.Flags().GetString("config")
+	if err != nil {
+		logger.Error("failed to get config flag", "error", err)
+		return fmt.Errorf("failed to get config flag: %w", err)
+	}
+
+	if configPath == "" {
+		logger.Error("--config flag is required")
+		return fmt.Errorf("--config flag is required")
+	}
+
+	// Validate config path
+	if err := ValidateConfigPath(configPath); err != nil {
+		logger.Error("invalid config path", "error", err)
+		return fmt.Errorf("invalid config path: %w", err)
+	}
+
+	// Load configuration
+	cfg, err := LoadConfig(configPath, logger)
+	if err != nil {
+		logger.Error("failed to load config", "error", err)
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Validate configuration
+	if err := cfg.Validate(); err != nil {
+		logger.Error("invalid configuration", "error", err)
+		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
 	// Create Telegram client
-	client := NewTelegramClient(token, logger)
+	client := NewTelegramClient(cfg.TelegramToken, logger)
 
 	// Test: Get bot info
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -205,7 +281,7 @@ func checkBot(cmd *cobra.Command, args []string) error {
 		default:
 		}
 
-		updates, err := client.GetUpdates(ctx, offset)
+		updates, nextOffset, err := client.GetUpdates(ctx, offset)
 		if err != nil {
 			// Check if this is a graceful shutdown
 			select {
@@ -224,12 +300,10 @@ func checkBot(cmd *cobra.Command, args []string) error {
 				logger.Error("failed to encode update", "error", err)
 			}
 			fmt.Println() // Empty line between updates
-
-			// Update offset to get next batch
-			if update.UpdateID >= offset {
-				offset = update.UpdateID + 1
-			}
 		}
+
+		// Update offset for next poll
+		offset = nextOffset
 
 		if len(updates) == 0 {
 			// No updates, short sleep before next poll
