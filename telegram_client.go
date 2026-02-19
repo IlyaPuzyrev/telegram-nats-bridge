@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,9 +15,11 @@ import (
 // TelegramClientInterface defines the interface for Telegram Bot API client
 type TelegramClientInterface interface {
 	// GetUpdates retrieves updates from Telegram with specified offset
-	GetUpdates(ctx context.Context, offset int64) ([]Update, error)
+	// Returns updates, next offset (max update_id + 1), and error
+	GetUpdates(ctx context.Context, offset int64) ([]Update, int64, error)
 	// GetUpdatesWithTimeout retrieves updates with custom timeout for long polling
-	GetUpdatesWithTimeout(ctx context.Context, offset int64, timeout int) ([]Update, error)
+	// Returns updates, next offset (max update_id + 1), and error
+	GetUpdatesWithTimeout(ctx context.Context, offset int64, timeout int) ([]Update, int64, error)
 	// GetBotInfo retrieves information about the bot
 	GetBotInfo(ctx context.Context) (*User, error)
 	// GetMe is alias for GetBotInfo
@@ -48,14 +52,15 @@ func NewTelegramClient(token string, logger *slog.Logger) *TelegramClient {
 
 // GetUpdates retrieves updates from Telegram
 // offset - identifier of the first update to be returned
-// Returns updates and nil error on success
-func (c *TelegramClient) GetUpdates(ctx context.Context, offset int64) ([]Update, error) {
+// Returns updates, next offset (max update_id + 1), and nil error on success
+func (c *TelegramClient) GetUpdates(ctx context.Context, offset int64) ([]Update, int64, error) {
 	return c.GetUpdatesWithTimeout(ctx, offset, 30)
 }
 
 // GetUpdatesWithTimeout retrieves updates with specified timeout for long polling
 // timeout - timeout in seconds for long polling (0 for short polling)
-func (c *TelegramClient) GetUpdatesWithTimeout(ctx context.Context, offset int64, timeout int) ([]Update, error) {
+// Returns updates, next offset (max update_id + 1), and error
+func (c *TelegramClient) GetUpdatesWithTimeout(ctx context.Context, offset int64, timeout int) ([]Update, int64, error) {
 	c.logger.Debug("getting updates from Telegram",
 		"offset", offset,
 		"timeout", timeout)
@@ -79,38 +84,61 @@ func (c *TelegramClient) GetUpdatesWithTimeout(ctx context.Context, offset int64
 		req.SetQueryParam("timeout", fmt.Sprintf("%d", timeout))
 	}
 
-	var response GetUpdatesResponse
-	resp, err := req.
-		SetResult(&response).
-		Get("/getUpdates")
+	resp, err := req.Get("/getUpdates")
 
 	if err != nil {
 		// Don't treat context cancellation as an error
 		if errors.Is(err, context.Canceled) {
 			c.logger.Debug("getUpdates cancelled")
-			return nil, nil
+			return nil, offset, nil
 		}
 		c.logger.Error("failed to get updates", "error", err)
-		return nil, fmt.Errorf("failed to get updates: %w", err)
+		return nil, offset, fmt.Errorf("failed to get updates: %w", err)
 	}
 
 	if resp.IsError() {
 		c.logger.Error("telegram API error",
 			"status", resp.StatusCode(),
 			"body", string(resp.Body()))
-		return nil, fmt.Errorf("telegram API error: status %d", resp.StatusCode())
+		return nil, offset, fmt.Errorf("telegram API error: status %d", resp.StatusCode())
+	}
+
+	// Parse JSON response with UseNumber to preserve integer precision
+	var response struct {
+		Ok          bool     `json:"ok"`
+		Result      []Update `json:"result,omitempty"`
+		ErrorCode   int      `json:"error_code,omitempty"`
+		Description string   `json:"description,omitempty"`
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(resp.Body()))
+	decoder.UseNumber()
+	if err := decoder.Decode(&response); err != nil {
+		c.logger.Error("failed to decode response", "error", err)
+		return nil, offset, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	if !response.Ok {
 		c.logger.Error("telegram API returned error",
 			"error_code", response.ErrorCode,
 			"description", response.Description)
-		return nil, fmt.Errorf("telegram API error %d: %s",
+		return nil, offset, fmt.Errorf("telegram API error %d: %s",
 			response.ErrorCode, response.Description)
 	}
 
 	c.logger.Debug("received updates", "count", len(response.Result))
-	return response.Result, nil
+
+	// Calculate next offset (max update_id + 1)
+	nextOffset := offset
+	for _, update := range response.Result {
+		if updateID, ok := update["update_id"].(json.Number); ok {
+			if id, err := updateID.Int64(); err == nil && id >= nextOffset {
+				nextOffset = id + 1
+			}
+		}
+	}
+
+	return response.Result, nextOffset, nil
 }
 
 // GetBotInfo retrieves information about the bot

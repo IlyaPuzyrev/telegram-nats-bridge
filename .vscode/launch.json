@@ -7,7 +7,7 @@
       "request": "launch",
       "mode": "auto",
       "program": "${workspaceFolder}",
-      "args": ["check", "bot"],
+      "args": ["check", "bot", "--config", "config.yaml"],
       "envFile": "${workspaceFolder}/.env",
       "console": "integratedTerminal"
     },
@@ -17,7 +17,7 @@
       "request": "launch",
       "mode": "auto",
       "program": "${workspaceFolder}",
-      "args": ["run"],
+      "args": ["run", "--config", "config.yaml"],
       "envFile": "${workspaceFolder}/.env",
       "console": "integratedTerminal"
     }

@@ -1,0 +1,9 @@
+# Example configuration file for telegram-nats-bridge
+# Required: NATS subject for publishing updates (only from YAML, not from env)
+subject: telegram.updates
+
+# Optional: Telegram bot token (can also be set via TELEGRAM_BOT_TOKEN env)
+# telegram_token: "your-bot-token"
+
+# Optional: NATS server URL (can also be set via NATS_URL env)
+# nats_url: "nats://localhost:4222"
