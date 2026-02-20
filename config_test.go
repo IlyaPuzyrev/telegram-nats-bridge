@@ -24,7 +24,12 @@ func TestLoadConfig_WithFile(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	configContent := `
-subject: test.updates
+mode: first
+routes:
+  - condition: "update.message != nil"
+    subject:
+      type: string
+      value: telegram.messages
 telegram_token: test-token
 nats_url: nats://test:4222
 `
@@ -32,7 +37,8 @@ nats_url: nats://test:4222
 
 	cfg, err := LoadConfig(configPath, logger)
 	require.NoError(t, err)
-	assert.Equal(t, "test.updates", cfg.Subject)
+	assert.Equal(t, "first", cfg.Mode)
+	assert.Equal(t, 1, len(cfg.Routes))
 	assert.Equal(t, "test-token", cfg.TelegramToken)
 	assert.Equal(t, "nats://test:4222", cfg.NATSURL)
 }
@@ -42,13 +48,18 @@ func TestLoadConfig_FromEnvOnly(t *testing.T) {
 		Level: slog.LevelError,
 	}))
 
-	// Create temporary config file with only subject
+	// Create temporary config file with routes only
 	// telegram_token and nats_url will come from env
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	configContent := `
-subject: test.updates
+mode: all
+routes:
+  - condition: "update.message != nil"
+    subject:
+      type: string
+      value: telegram.messages
 `
 	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
 
@@ -58,7 +69,8 @@ subject: test.updates
 
 	cfg, err := LoadConfig(configPath, logger)
 	require.NoError(t, err)
-	assert.Equal(t, "test.updates", cfg.Subject)
+	assert.Equal(t, "all", cfg.Mode)
+	assert.Equal(t, 1, len(cfg.Routes))
 	assert.Equal(t, "env-token", cfg.TelegramToken)
 	assert.Equal(t, "nats://env:4222", cfg.NATSURL)
 }
@@ -83,25 +95,63 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "valid config",
 			config: Config{
-				Subject:       "test.updates",
+				Mode: "first",
+				Routes: []Route{
+					{
+						Condition: "update.message != nil",
+						Subject: RouteSubject{
+							Type:  SubjectTypeString,
+							Value: "telegram.messages",
+						},
+					},
+				},
 				TelegramToken: "test-token",
 				NATSURL:       "nats://localhost:4222",
 			},
 			wantErr: false,
 		},
 		{
-			name: "missing subject",
+			name: "empty routes is valid",
 			config: Config{
+				Mode:          "first",
+				Routes:        []Route{},
+				TelegramToken: "test-token",
+				NATSURL:       "nats://localhost:4222",
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid mode",
+			config: Config{
+				Mode: "invalid",
+				Routes: []Route{
+					{
+						Condition: "update.message != nil",
+						Subject: RouteSubject{
+							Type:  SubjectTypeString,
+							Value: "telegram.messages",
+						},
+					},
+				},
 				TelegramToken: "test-token",
 				NATSURL:       "nats://localhost:4222",
 			},
 			wantErr: true,
-			errMsg:  "subject is required",
+			errMsg:  "mode must be 'first' or 'all'",
 		},
 		{
 			name: "missing telegram token",
 			config: Config{
-				Subject: "test.updates",
+				Mode: "first",
+				Routes: []Route{
+					{
+						Condition: "update.message != nil",
+						Subject: RouteSubject{
+							Type:  SubjectTypeString,
+							Value: "telegram.messages",
+						},
+					},
+				},
 				NATSURL: "nats://localhost:4222",
 			},
 			wantErr: true,
@@ -110,7 +160,16 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "missing nats url",
 			config: Config{
-				Subject:       "test.updates",
+				Mode: "first",
+				Routes: []Route{
+					{
+						Condition: "update.message != nil",
+						Subject: RouteSubject{
+							Type:  SubjectTypeString,
+							Value: "telegram.messages",
+						},
+					},
+				},
 				TelegramToken: "test-token",
 			},
 			wantErr: true,
@@ -184,7 +243,7 @@ func TestValidateConfigPath_InvalidExtension(t *testing.T) {
 func TestValidateConfigPath_Valid(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	require.NoError(t, os.WriteFile(configPath, []byte("subject: test"), 0644))
+	require.NoError(t, os.WriteFile(configPath, []byte("mode: first\nroutes: []"), 0644))
 
 	err := ValidateConfigPath(configPath)
 	assert.NoError(t, err)

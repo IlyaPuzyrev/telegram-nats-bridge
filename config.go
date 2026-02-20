@@ -9,11 +9,29 @@ import (
 	"github.com/spf13/viper"
 )
 
+type RouteSubjectType string
+
+const (
+	SubjectTypeString RouteSubjectType = "string"
+	SubjectTypeExpr   RouteSubjectType = "expr"
+)
+
+type RouteSubject struct {
+	Type  RouteSubjectType `mapstructure:"type"`
+	Value string           `mapstructure:"value"`
+}
+
+type Route struct {
+	Condition string       `mapstructure:"condition"`
+	Subject   RouteSubject `mapstructure:"subject"`
+}
+
 // Config holds the application configuration
 type Config struct {
-	Subject       string `mapstructure:"subject"`
-	TelegramToken string `mapstructure:"telegram_token,omitempty"`
-	NATSURL       string `mapstructure:"nats_url,omitempty"`
+	Mode          string  `mapstructure:"mode"`
+	Routes        []Route `mapstructure:"routes"`
+	TelegramToken string  `mapstructure:"telegram_token,omitempty"`
+	NATSURL       string  `mapstructure:"nats_url,omitempty"`
 }
 
 // LoadConfig loads configuration from file and environment variables
@@ -45,14 +63,13 @@ func LoadConfig(configPath string, logger *slog.Logger) (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	// Validate required fields
-	if cfg.Subject == "" {
-		logger.Error("subject is required")
-		return nil, fmt.Errorf("subject is required")
+	if cfg.Mode == "" {
+		cfg.Mode = "first"
 	}
 
 	logger.Info("configuration loaded",
-		"subject", cfg.Subject,
+		"mode", cfg.Mode,
+		"routes_count", len(cfg.Routes),
 		"has_telegram_token", cfg.TelegramToken != "",
 		"nats_url", cfg.NATSURL)
 
@@ -61,8 +78,23 @@ func LoadConfig(configPath string, logger *slog.Logger) (*Config, error) {
 
 // Validate validates the configuration
 func (c *Config) Validate() error {
-	if c.Subject == "" {
-		return fmt.Errorf("subject is required (must be defined in YAML config)")
+	if c.Mode != "first" && c.Mode != "all" {
+		return fmt.Errorf("mode must be 'first' or 'all'")
+	}
+
+	for i, route := range c.Routes {
+		if route.Condition == "" {
+			return fmt.Errorf("routes[%d].condition is required", i)
+		}
+		if route.Subject.Type == "" {
+			return fmt.Errorf("routes[%d].subject.type is required", i)
+		}
+		if route.Subject.Value == "" {
+			return fmt.Errorf("routes[%d].subject.value is required", i)
+		}
+		if route.Subject.Type != SubjectTypeString && route.Subject.Type != SubjectTypeExpr {
+			return fmt.Errorf("routes[%d].subject.type must be 'string' or 'expr'", i)
+		}
 	}
 
 	if c.TelegramToken == "" {

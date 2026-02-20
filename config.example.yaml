@@ -1,6 +1,39 @@
 # Example configuration file for telegram-nats-bridge
-# Required: NATS subject for publishing updates (only from YAML, not from env)
-subject: telegram.updates
+
+# Mode: "first" - send to first matched route's subject
+#        "all"  - send to all matched routes' subjects
+mode: "first"
+
+# Routes for message routing
+# Each route has:
+#   condition: expr condition (returns bool)
+#   subject: destination subject
+#     type: "string" (static) or "expr" (dynamic)
+#     value: subject string or expr program
+routes:
+  # Messages from specific user by ID (dynamic subject)
+  - condition: "update.message?.from?.id != nil"
+    subject:
+      type: "expr"
+      value: "sprintf(\"telegram.messages.%v\", update.message.from.id)"
+
+  # Edited messages
+  - condition: "update.edited_message != nil"
+    subject:
+      type: "string"
+      value: "telegram.edited"
+
+  # Callback queries
+  - condition: "update.callback_query != nil"
+    subject:
+      type: "string"
+      value: "telegram.callbacks"
+
+  # All messages (catch-all)
+  # - condition: "update.message != nil"
+  #   subject:
+  #     type: "string"
+  #     value: "telegram.messages"
 
 # Optional: Telegram bot token (can also be set via TELEGRAM_BOT_TOKEN env)
 # telegram_token: "your-bot-token"

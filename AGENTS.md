@@ -55,6 +55,7 @@ task nats-down
 | `github.com/spf13/cobra` | CLI фреймворк |
 | `github.com/spf13/viper` | Чтение YAML конфига |
 | `github.com/stretchr/testify` | Тестирование |
+| `github.com/expr-lang/expr` | Язык выражений для маршрутизации |
 
 ## Конфигурация
 
@@ -65,8 +66,15 @@ task nats-down
 **YAML конфиг:** путь передаётся через флаг `--config`
 
 ```yaml
-# Обязательное поле: NATS subject для публикации updates
-subject: telegram.updates
+# Режим маршрутизации: "first" - первое совпадение, "all" - все совпадения
+mode: "first"
+
+# Правила маршрутизации
+routes:
+  - condition: "update.message != nil"  # условие на expr
+    subject:
+      type: "string"  # или "expr"
+      value: "telegram.messages"  # тема или expr-программа
 
 # Опционально: можно задать здесь вместо env
 # telegram_token: "..."
@@ -74,8 +82,58 @@ subject: telegram.updates
 ```
 
 **Приоритет:**
-- `subject` — только из YAML
+- `mode` и `routes` — только из YAML
 - `telegram_token` и `nats_url` — из YAML или env (viper объединяет)
+
+### Маршрутизация сообщений
+
+Bridge использует [Expr](https://github.com/expr-lang/expr) для маршрутизации updates.
+
+**Режимы:**
+- `mode: "first"` — отправить на subject первого matched правила
+- `mode: "all"` — отправить на subject каждого matched правила
+
+**Структура правила:**
+- `condition` — выражение на Expr, возвращающее bool
+- `subject.type` — `"string"` (статическая тема) или `"expr"` (динамическая)
+- `subject.value` — тема или expr-программа
+
+**Примеры:**
+```yaml
+# Сообщения от конкретного пользователя по ID
+- condition: "update.message?.from?.id != nil"
+  subject:
+    type: "expr"
+    value: "sprintf(\"telegram.messages.%v\", update.message.from.id)"
+
+# Отредактированные сообщения
+- condition: "update.edited_message != nil"
+  subject:
+    type: "string"
+    value: "telegram.edited"
+
+# Callback запросы
+- condition: "update.callback_query != nil"
+  subject:
+    type: "string"
+    value: "telegram.callbacks"
+
+# Все сообщения (общий канал)
+- condition: "update.message != nil"
+  subject:
+    type: "string"
+    value: "telegram.messages"
+```
+
+**Доступные операторы в expr:**
+- Safe navigation: `?.` (например, `update.message?.from?.id` — вернёт nil если любая часть = nil)
+- Сравнение: `==`, `!=`, `>`, `<`, `>=`, `<=`
+- Логика: `and`, `or`, `not`
+- Доступ к полям: точечная нотация (`update.message.from.id`)
+
+**Доступные функции в expr:** `sprintf`
+
+**Поведение:** Update, не подходящий ни под одно правило, игнорируется.
 
 ## CLI
 

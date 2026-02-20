@@ -33,6 +33,9 @@ go.work.sum
 # Plans directory
 .plans/
 
+# Drafts
+.draft/
+
 # Local config (use config.example.yaml as template)
 config.yaml
 
