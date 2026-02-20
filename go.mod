@@ -3,6 +3,7 @@ module github.com/IlyaPuzyrev/telegram-nats-bridge
 go 1.25.5
 
 require (
+	github.com/expr-lang/expr v1.17.8
 	github.com/go-resty/resty/v2 v2.16.5
 	github.com/nats-io/nats.go v1.48.0
 	github.com/spf13/cobra v1.8.1
