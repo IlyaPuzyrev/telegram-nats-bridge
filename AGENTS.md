@@ -100,11 +100,17 @@ Bridge использует [Expr](https://github.com/expr-lang/expr) для м�
 
 **Примеры:**
 ```yaml
-# Все сообщения
-- condition: "update.message != nil"
+# Сообщения от конкретного пользователя по ID
+- condition: "update.message?.from?.id != nil"
+  subject:
+    type: "expr"
+    value: "sprintf(\"telegram.messages.%v\", update.message.from.id)"
+
+# Отредактированные сообщения
+- condition: "update.edited_message != nil"
   subject:
     type: "string"
-    value: "telegram.messages"
+    value: "telegram.edited"
 
 # Callback запросы
 - condition: "update.callback_query != nil"
@@ -112,12 +118,18 @@ Bridge использует [Expr](https://github.com/expr-lang/expr) для м�
     type: "string"
     value: "telegram.callbacks"
 
-# Динамическая тема по user ID
+# Все сообщения (общий канал)
 - condition: "update.message != nil"
   subject:
-    type: "expr"
-    value: "sprintf(\"telegram.%d.messages\", update.message.from.id)"
+    type: "string"
+    value: "telegram.messages"
 ```
+
+**Доступные операторы в expr:**
+- Safe navigation: `?.` (например, `update.message?.from?.id` — вернёт nil если любая часть = nil)
+- Сравнение: `==`, `!=`, `>`, `<`, `>=`, `<=`
+- Логика: `and`, `or`, `not`
+- Доступ к полям: точечная нотация (`update.message.from.id`)
 
 **Доступные функции в expr:** `sprintf`
 

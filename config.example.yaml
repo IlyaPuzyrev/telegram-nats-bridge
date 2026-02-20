@@ -11,23 +11,29 @@ mode: "first"
 #     type: "string" (static) or "expr" (dynamic)
 #     value: subject string or expr program
 routes:
-  # Route all messages to telegram.messages
-  - condition: "update.message != nil"
+  # Messages from specific user by ID (dynamic subject)
+  - condition: "update.message?.from?.id != nil"
+    subject:
+      type: "expr"
+      value: "sprintf(\"telegram.messages.%v\", update.message.from.id)"
+
+  # Edited messages
+  - condition: "update.edited_message != nil"
     subject:
       type: "string"
-      value: "telegram.messages"
+      value: "telegram.edited"
 
-  # Route callback queries to telegram.callbacks
+  # Callback queries
   - condition: "update.callback_query != nil"
     subject:
       type: "string"
       value: "telegram.callbacks"
 
-  # Dynamic subject example: send to user-specific topic
+  # All messages (catch-all)
   # - condition: "update.message != nil"
   #   subject:
-  #     type: "expr"
-  #     value: "sprintf(\"telegram.%d.messages\", update.message.from.id)"
+  #     type: "string"
+  #     value: "telegram.messages"
 
 # Optional: Telegram bot token (can also be set via TELEGRAM_BOT_TOKEN env)
 # telegram_token: "your-bot-token"
