@@ -190,25 +190,26 @@ func runBridge(cmd *cobra.Command, args []string) {
 		}
 
 		for _, update := range updates {
-			var updateID int64
-			if idNum, ok := update["update_id"].(json.Number); ok {
-				updateID, _ = idNum.Int64()
-			}
-			_, hasMessage := update["message"]
-			logger.Info("received update",
-				"update_id", updateID,
-				"has_message", hasMessage)
+			go func(update map[string]any) {
+				var updateID int64
+				if idNum, ok := update["update_id"].(json.Number); ok {
+					updateID, _ = idNum.Int64()
+				}
+				_, hasMessage := update["message"]
+				logger.Info("received update",
+					"update_id", updateID,
+					"has_message", hasMessage)
 
-			// Route update to NATS subjects
-			subjects, err := router.Route(update)
-			if err != nil {
-				logger.Error("failed to route update", "error", err, "update_id", updateID)
-				continue
-			}
+				subjects, err := router.Route(update)
+				if err != nil {
+					logger.Error("failed to route update", "error", err, "update_id", updateID)
+					return
+				}
 
-			for _, subject := range subjects {
-				publisher.Publish(subject, update)
-			}
+				for _, subject := range subjects {
+					publisher.Publish(subject, update)
+				}
+			}(update)
 		}
 
 		// Update offset for next poll
