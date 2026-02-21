@@ -4,6 +4,15 @@
 #        "all"  - send to all matched routes' subjects
 mode: "first"
 
+# Number of concurrent workers for route processing (default: 5)
+route_workers: 5
+
+# Number of concurrent workers for publishing to NATS (default: 5)
+publish_workers: 5
+
+# Timeout in seconds for graceful shutdown of publisher (default: 10)
+publish_shutdown_timeout: 10
+
 # Routes for message routing
 # Each route has:
 #   condition: expr condition (returns bool)

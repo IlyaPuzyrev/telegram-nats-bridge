@@ -56,6 +56,7 @@ task nats-down
 | `github.com/spf13/viper` | Чтение YAML конфига |
 | `github.com/stretchr/testify` | Тестирование |
 | `github.com/expr-lang/expr` | Язык выражений для маршрутизации |
+| `golang.org/x/sync/errgroup` | Конкурентная компиляция expr программ |
 
 ## Конфигурация
 
@@ -68,6 +69,15 @@ task nats-down
 ```yaml
 # Режим маршрутизации: "first" - первое совпадение, "all" - все совпадения
 mode: "first"
+
+# Количество воркеров для конкурентной обработки routes (по умолчанию: 5)
+route_workers: 5
+
+# Количество воркеров для конкурентной публикации в NATS (по умолчанию: 5)
+publish_workers: 5
+
+# Таймаут (сек) для graceful shutdown publisher (по умолчанию: 10)
+publish_shutdown_timeout: 10
 
 # Правила маршрутизации
 routes:
@@ -82,7 +92,7 @@ routes:
 ```
 
 **Приоритет:**
-- `mode` и `routes` — только из YAML
+- `mode`, `routes`, `route_workers`, `publish_workers`, `publish_shutdown_timeout` — только из YAML
 - `telegram_token` и `nats_url` — из YAML или env (viper объединяет)
 
 ### Маршрутизация сообщений
