@@ -137,11 +137,15 @@ func runBridge(cmd *cobra.Command, args []string) {
 	logger.Info("NATS connected", "url", cfg.NATSURL)
 
 	// Create router
-	router, err := NewRouter(cfg.Routes, cfg.Mode, logger)
+	router, err := NewRouter(cfg.Routes, cfg.Mode, cfg.RouteWorkers, logger)
 	if err != nil {
 		logger.Error("failed to create router", "error", err)
 		os.Exit(1)
 	}
+
+	// Create publisher
+	publisher := NewPublisher(cfg.PublishWorkers, cfg.PublishShutdownTimeout, natsClient, logger)
+	publisher.Start()
 
 	// Start polling for updates
 	logger.Info("starting to poll for updates...")
@@ -164,6 +168,7 @@ func runBridge(cmd *cobra.Command, args []string) {
 	for {
 		select {
 		case <-ctx.Done():
+			publisher.Close()
 			logger.Info("shutdown complete")
 			return
 		default:
@@ -174,6 +179,7 @@ func runBridge(cmd *cobra.Command, args []string) {
 			// Check if this is a graceful shutdown
 			select {
 			case <-ctx.Done():
+				publisher.Close()
 				logger.Info("shutdown complete")
 				return
 			default:
@@ -200,10 +206,8 @@ func runBridge(cmd *cobra.Command, args []string) {
 				continue
 			}
 
-			for subject := range subjects {
-				if err := natsClient.Publish(ctx, subject, update); err != nil {
-					logger.Error("failed to publish update to NATS", "error", err, "update_id", updateID, "subject", subject)
-				}
+			for _, subject := range subjects {
+				publisher.Publish(subject, update)
 			}
 		}
 

@@ -28,10 +28,13 @@ type Route struct {
 
 // Config holds the application configuration
 type Config struct {
-	Mode          string  `mapstructure:"mode"`
-	Routes        []Route `mapstructure:"routes"`
-	TelegramToken string  `mapstructure:"telegram_token,omitempty"`
-	NATSURL       string  `mapstructure:"nats_url,omitempty"`
+	Mode                   string  `mapstructure:"mode"`
+	Routes                 []Route `mapstructure:"routes"`
+	TelegramToken          string  `mapstructure:"telegram_token,omitempty"`
+	NATSURL                string  `mapstructure:"nats_url,omitempty"`
+	RouteWorkers           int     `mapstructure:"route_workers"`
+	PublishWorkers         int     `mapstructure:"publish_workers"`
+	PublishShutdownTimeout int     `mapstructure:"publish_shutdown_timeout"`
 }
 
 // LoadConfig loads configuration from file and environment variables
@@ -67,11 +70,26 @@ func LoadConfig(configPath string, logger *slog.Logger) (*Config, error) {
 		cfg.Mode = "first"
 	}
 
+	if cfg.RouteWorkers == 0 {
+		cfg.RouteWorkers = 5
+	}
+
+	if cfg.PublishWorkers == 0 {
+		cfg.PublishWorkers = 5
+	}
+
+	if cfg.PublishShutdownTimeout == 0 {
+		cfg.PublishShutdownTimeout = 10
+	}
+
 	logger.Info("configuration loaded",
 		"mode", cfg.Mode,
 		"routes_count", len(cfg.Routes),
 		"has_telegram_token", cfg.TelegramToken != "",
-		"nats_url", cfg.NATSURL)
+		"nats_url", cfg.NATSURL,
+		"route_workers", cfg.RouteWorkers,
+		"publish_workers", cfg.PublishWorkers,
+		"publish_shutdown_timeout", cfg.PublishShutdownTimeout)
 
 	return &cfg, nil
 }
@@ -80,6 +98,18 @@ func LoadConfig(configPath string, logger *slog.Logger) (*Config, error) {
 func (c *Config) Validate() error {
 	if c.Mode != "first" && c.Mode != "all" {
 		return fmt.Errorf("mode must be 'first' or 'all'")
+	}
+
+	if c.RouteWorkers <= 0 {
+		return fmt.Errorf("route_workers must be > 0")
+	}
+
+	if c.PublishWorkers <= 0 {
+		return fmt.Errorf("publish_workers must be > 0")
+	}
+
+	if c.PublishShutdownTimeout <= 0 {
+		return fmt.Errorf("publish_shutdown_timeout must be > 0")
 	}
 
 	for i, route := range c.Routes {

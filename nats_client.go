@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -130,3 +131,91 @@ func (c *NATSClient) IsConnected() bool {
 
 // Ensure NATSClient implements NATSClientInterface
 var _ NATSClientInterface = (*NATSClient)(nil)
+
+type publishTask struct {
+	subject string
+	data    interface{}
+}
+
+type Publisher struct {
+	workers    int
+	timeoutSec int
+	tasks      chan publishTask
+	natsClient NATSClientInterface
+	logger     *slog.Logger
+	wg         sync.WaitGroup
+	ctx        context.Context
+	cancel     context.CancelFunc
+}
+
+func NewPublisher(workers, timeoutSec int, natsClient NATSClientInterface, logger *slog.Logger) *Publisher {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Publisher{
+		workers:    workers,
+		timeoutSec: timeoutSec,
+		tasks:      make(chan publishTask, workers*2),
+		natsClient: natsClient,
+		logger:     logger,
+		ctx:        ctx,
+		cancel:     cancel,
+	}
+}
+
+func (p *Publisher) Start() {
+	for i := 0; i < p.workers; i++ {
+		p.wg.Add(1)
+		go p.worker()
+	}
+	p.logger.Info("publisher started", "workers", p.workers)
+}
+
+func (p *Publisher) worker() {
+	defer p.wg.Done()
+
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case task, ok := <-p.tasks:
+			if !ok {
+				return
+			}
+			p.publishTask(task)
+		}
+	}
+}
+
+func (p *Publisher) publishTask(task publishTask) {
+	ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
+	defer cancel()
+
+	if err := p.natsClient.Publish(ctx, task.subject, task.data); err != nil {
+		p.logger.Error("failed to publish message", "subject", task.subject, "error", err)
+	}
+}
+
+func (p *Publisher) Publish(subject string, data interface{}) {
+	select {
+	case <-p.ctx.Done():
+		return
+	case p.tasks <- publishTask{subject: subject, data: data}:
+	}
+}
+
+func (p *Publisher) Close() {
+	p.cancel()
+	close(p.tasks)
+
+	done := make(chan struct{})
+	go func() {
+		p.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		p.logger.Info("publisher closed")
+	case <-time.After(time.Duration(p.timeoutSec) * time.Second):
+		p.logger.Warn("publisher close timeout", "timeout_sec", p.timeoutSec)
+	}
+}

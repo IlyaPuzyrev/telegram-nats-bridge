@@ -24,7 +24,7 @@ func TestNewRouter(t *testing.T) {
 				},
 			},
 		}
-		router, err := NewRouter(routes, "first", logger)
+		router, err := NewRouter(routes, "first", 5, logger)
 		require.NoError(t, err)
 		assert.NotNil(t, router)
 	})
@@ -39,7 +39,7 @@ func TestNewRouter(t *testing.T) {
 				},
 			},
 		}
-		_, err := NewRouter(routes, "first", logger)
+		_, err := NewRouter(routes, "first", 5, logger)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to compile condition")
 	})
@@ -54,13 +54,13 @@ func TestNewRouter(t *testing.T) {
 				},
 			},
 		}
-		_, err := NewRouter(routes, "first", logger)
+		_, err := NewRouter(routes, "first", 5, logger)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to compile subject expression")
 	})
 
 	t.Run("empty routes", func(t *testing.T) {
-		router, err := NewRouter([]Route{}, "first", logger)
+		router, err := NewRouter([]Route{}, "first", 5, logger)
 		require.NoError(t, err)
 		assert.NotNil(t, router)
 		assert.Empty(t, router.routes)
@@ -89,7 +89,7 @@ func TestRouter_Route(t *testing.T) {
 				},
 			},
 		}
-		router, err := NewRouter(routes, "first", logger)
+		router, err := NewRouter(routes, "first", 5, logger)
 		require.NoError(t, err)
 
 		update := Update{
@@ -101,7 +101,7 @@ func TestRouter_Route(t *testing.T) {
 
 		subjects, err := router.Route(update)
 		require.NoError(t, err)
-		assert.Equal(t, map[string]bool{"telegram.messages": true}, subjects)
+		assert.Equal(t, []string{"telegram.messages"}, subjects)
 	})
 
 	t.Run("mode first - second match", func(t *testing.T) {
@@ -121,7 +121,7 @@ func TestRouter_Route(t *testing.T) {
 				},
 			},
 		}
-		router, err := NewRouter(routes, "first", logger)
+		router, err := NewRouter(routes, "first", 5, logger)
 		require.NoError(t, err)
 
 		update := Update{
@@ -133,7 +133,7 @@ func TestRouter_Route(t *testing.T) {
 
 		subjects, err := router.Route(update)
 		require.NoError(t, err)
-		assert.Equal(t, map[string]bool{"telegram.callbacks": true}, subjects)
+		assert.Equal(t, []string{"telegram.callbacks"}, subjects)
 	})
 
 	t.Run("mode all - multiple matches", func(t *testing.T) {
@@ -153,7 +153,7 @@ func TestRouter_Route(t *testing.T) {
 				},
 			},
 		}
-		router, err := NewRouter(routes, "all", logger)
+		router, err := NewRouter(routes, "all", 5, logger)
 		require.NoError(t, err)
 
 		update := Update{
@@ -165,10 +165,7 @@ func TestRouter_Route(t *testing.T) {
 
 		subjects, err := router.Route(update)
 		require.NoError(t, err)
-		assert.Equal(t, map[string]bool{
-			"telegram.messages": true,
-			"telegram.texts":    true,
-		}, subjects)
+		assert.Equal(t, []string{"telegram.messages", "telegram.texts"}, subjects)
 	})
 
 	t.Run("no match - empty result", func(t *testing.T) {
@@ -181,7 +178,7 @@ func TestRouter_Route(t *testing.T) {
 				},
 			},
 		}
-		router, err := NewRouter(routes, "first", logger)
+		router, err := NewRouter(routes, "first", 5, logger)
 		require.NoError(t, err)
 
 		update := Update{
@@ -206,7 +203,7 @@ func TestRouter_Route(t *testing.T) {
 				},
 			},
 		}
-		router, err := NewRouter(routes, "first", logger)
+		router, err := NewRouter(routes, "first", 5, logger)
 		require.NoError(t, err)
 
 		update := Update{
@@ -221,7 +218,7 @@ func TestRouter_Route(t *testing.T) {
 
 		subjects, err := router.Route(update)
 		require.NoError(t, err)
-		assert.Equal(t, map[string]bool{"telegram.12345.messages": true}, subjects)
+		assert.Equal(t, []string{"telegram.12345.messages"}, subjects)
 	})
 
 	t.Run("empty update", func(t *testing.T) {
@@ -234,7 +231,7 @@ func TestRouter_Route(t *testing.T) {
 				},
 			},
 		}
-		router, err := NewRouter(routes, "first", logger)
+		router, err := NewRouter(routes, "first", 5, logger)
 		require.NoError(t, err)
 
 		update := Update{
