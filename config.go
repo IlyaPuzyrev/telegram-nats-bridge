@@ -16,6 +16,17 @@ const (
 	SubjectTypeExpr   RouteSubjectType = "expr"
 )
 
+type EngineType string
+
+const (
+	EngineCore      EngineType = "core"
+	EngineJetStream EngineType = "jetstream"
+)
+
+type JetStreamConfig struct {
+	StreamConfig string `mapstructure:"stream_config"`
+}
+
 type RouteSubject struct {
 	Type  RouteSubjectType `mapstructure:"type"`
 	Value string           `mapstructure:"value"`
@@ -28,13 +39,15 @@ type Route struct {
 
 // Config holds the application configuration
 type Config struct {
-	Mode                   string  `mapstructure:"mode"`
-	Routes                 []Route `mapstructure:"routes"`
-	TelegramToken          string  `mapstructure:"telegram_token,omitempty"`
-	NATSURL                string  `mapstructure:"nats_url,omitempty"`
-	RouteWorkers           int     `mapstructure:"route_workers"`
-	PublishWorkers         int     `mapstructure:"publish_workers"`
-	PublishShutdownTimeout int     `mapstructure:"publish_shutdown_timeout"`
+	Mode                   string           `mapstructure:"mode"`
+	Routes                 []Route          `mapstructure:"routes"`
+	Engine                 EngineType       `mapstructure:"engine"`
+	JetStream              *JetStreamConfig `mapstructure:"jetstream"`
+	TelegramToken          string           `mapstructure:"telegram_token,omitempty"`
+	NATSURL                string           `mapstructure:"nats_url,omitempty"`
+	RouteWorkers           int              `mapstructure:"route_workers"`
+	PublishWorkers         int              `mapstructure:"publish_workers"`
+	PublishShutdownTimeout int              `mapstructure:"publish_shutdown_timeout"`
 }
 
 // LoadConfig loads configuration from file and environment variables
@@ -70,6 +83,10 @@ func LoadConfig(configPath string, logger *slog.Logger) (*Config, error) {
 		cfg.Mode = "first"
 	}
 
+	if cfg.Engine == "" {
+		cfg.Engine = EngineCore
+	}
+
 	if cfg.RouteWorkers == 0 {
 		cfg.RouteWorkers = 5
 	}
@@ -84,6 +101,7 @@ func LoadConfig(configPath string, logger *slog.Logger) (*Config, error) {
 
 	logger.Info("configuration loaded",
 		"mode", cfg.Mode,
+		"engine", cfg.Engine,
 		"routes_count", len(cfg.Routes),
 		"has_telegram_token", cfg.TelegramToken != "",
 		"nats_url", cfg.NATSURL,
@@ -98,6 +116,22 @@ func LoadConfig(configPath string, logger *slog.Logger) (*Config, error) {
 func (c *Config) Validate() error {
 	if c.Mode != "first" && c.Mode != "all" {
 		return fmt.Errorf("mode must be 'first' or 'all'")
+	}
+
+	if c.Engine != EngineCore && c.Engine != EngineJetStream {
+		return fmt.Errorf("engine must be 'core' or 'jetstream'")
+	}
+
+	if c.Engine == EngineJetStream {
+		if c.JetStream == nil {
+			return fmt.Errorf("jetstream configuration is required when engine is 'jetstream'")
+		}
+		if c.JetStream.StreamConfig == "" {
+			return fmt.Errorf("jetstream.stream_config is required when engine is 'jetstream'")
+		}
+		if _, err := os.Stat(c.JetStream.StreamConfig); os.IsNotExist(err) {
+			return fmt.Errorf("jetstream.stream_config file does not exist: %s", c.JetStream.StreamConfig)
+		}
 	}
 
 	if c.RouteWorkers <= 0 {

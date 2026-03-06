@@ -122,19 +122,42 @@ func runBridge(cmd *cobra.Command, args []string) {
 		"username", botInfo.Username,
 		"name", botInfo.FirstName)
 
-	// Create and connect NATS client
-	natsClient := NewNATSClient(cfg.NATSURL, logger)
+	// Create and connect NATS client based on engine type
+	var natsClient NATSClientInterface
 
 	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := natsClient.Connect(ctx); err != nil {
-		logger.Error("failed to connect to NATS", "error", err)
+	switch cfg.Engine {
+	case EngineJetStream:
+		natsClient = NewJetStreamClient(cfg.NATSURL, logger)
+		if err := natsClient.Connect(ctx); err != nil {
+			logger.Error("failed to connect to NATS with JetStream", "error", err)
+			os.Exit(1)
+		}
+		defer natsClient.Close()
+
+		if err := natsClient.(*JetStreamClient).EnsureStream(ctx, cfg.JetStream.StreamConfig); err != nil {
+			logger.Error("failed to ensure JetStream stream", "error", err)
+			os.Exit(1)
+		}
+
+		logger.Info("NATS connected with JetStream", "url", cfg.NATSURL, "stream_config", cfg.JetStream.StreamConfig)
+
+	case EngineCore:
+		natsClient = NewNATSClient(cfg.NATSURL, logger)
+		if err := natsClient.Connect(ctx); err != nil {
+			logger.Error("failed to connect to NATS", "error", err)
+			os.Exit(1)
+		}
+		defer natsClient.Close()
+
+		logger.Info("NATS connected", "url", cfg.NATSURL)
+
+	default:
+		logger.Error("unknown engine type", "engine", cfg.Engine)
 		os.Exit(1)
 	}
-	defer natsClient.Close()
-
-	logger.Info("NATS connected", "url", cfg.NATSURL)
 
 	// Create router
 	router, err := NewRouter(cfg.Routes, cfg.Mode, cfg.RouteWorkers, logger)

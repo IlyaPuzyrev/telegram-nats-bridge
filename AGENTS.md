@@ -67,6 +67,9 @@ task nats-down
 **YAML конфиг:** путь передаётся через флаг `--config`
 
 ```yaml
+# NATS движок: "core" (по умолчанию) или "jetstream"
+engine: "core"
+
 # Режим маршрутизации: "first" - первое совпадение, "all" - все совпадения
 mode: "first"
 
@@ -78,6 +81,10 @@ publish_workers: 5
 
 # Таймаут (сек) для graceful shutdown publisher (по умолчанию: 10)
 publish_shutdown_timeout: 10
+
+# Настройки JetStream (обязательно если engine: "jetstream")
+jetstream:
+  stream_config: "./stream-config.json"
 
 # Правила маршрутизации
 routes:
@@ -92,8 +99,43 @@ routes:
 ```
 
 **Приоритет:**
-- `mode`, `routes`, `route_workers`, `publish_workers`, `publish_shutdown_timeout` — только из YAML
+- `engine`, `mode`, `routes`, `route_workers`, `publish_workers`, `publish_shutdown_timeout`, `jetstream` — только из YAML
 - `telegram_token` и `nats_url` — из YAML или env (viper объединяет)
+
+### JetStream
+
+При использовании `engine: "jetstream"` bridge публикует сообщения в JetStream стрим вместо Core NATS.
+
+**Преимущества JetStream:**
+- Персистентность сообщений на диске
+- At-least-once доставка
+- Возможность перезапуска consumer и получения пропущенных сообщений
+- Рерайт исторических сообщений
+
+**Конфигурация stream:**
+- Путь к JSON файлу задаётся в `jetstream.stream_config`
+- Формат: [jetstream.StreamConfig](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#StreamConfig)
+- При старте bridge вызывает `CreateOrUpdateStream` — создаёт или обновляет стрим
+
+**Пример stream-config.json:**
+```json
+{
+  "Name": "TELEGRAM",
+  "Description": "Stream for Telegram bot updates",
+  "Subjects": ["telegram.>"],
+  "Retention": "limits",
+  "Storage": "file",
+  "Replicas": 1
+}
+```
+
+**Docker Compose для JetStream:**
+```yaml
+services:
+  nats:
+    image: nats:latest
+    command: ["-js"]  # включить JetStream
+```
 
 ### Маршрутизация сообщений
 

@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 // NATSClientInterface defines the interface for NATS client
@@ -131,6 +133,145 @@ func (c *NATSClient) IsConnected() bool {
 
 // Ensure NATSClient implements NATSClientInterface
 var _ NATSClientInterface = (*NATSClient)(nil)
+
+// JetStreamClient implements NATSClientInterface for JetStream
+type JetStreamClient struct {
+	url    string
+	nc     *nats.Conn
+	js     jetstream.JetStream
+	logger *slog.Logger
+}
+
+// NewJetStreamClient creates a new JetStream client
+func NewJetStreamClient(url string, logger *slog.Logger) *JetStreamClient {
+	return &JetStreamClient{
+		url:    url,
+		logger: logger,
+	}
+}
+
+// Connect establishes connection to NATS server with JetStream
+func (c *JetStreamClient) Connect(ctx context.Context) error {
+	c.logger.Info("connecting to NATS with JetStream", "url", c.url)
+
+	timeout := 30 * time.Second
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout = time.Until(deadline)
+		if timeout < 0 {
+			timeout = 0
+		}
+	}
+
+	opts := []nats.Option{
+		nats.Name("telegram-nats-bridge"),
+		nats.MaxReconnects(5),
+		nats.ReconnectWait(2 * time.Second),
+		nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
+			c.logger.Warn("NATS disconnected", "error", err)
+		}),
+		nats.ReconnectHandler(func(nc *nats.Conn) {
+			c.logger.Info("NATS reconnected", "url", nc.ConnectedUrl())
+		}),
+	}
+
+	nc, err := nats.Connect(c.url, opts...)
+	if err != nil {
+		c.logger.Error("failed to connect to NATS", "error", err)
+		return fmt.Errorf("failed to connect to NATS: %w", err)
+	}
+
+	js, err := jetstream.New(nc)
+	if err != nil {
+		c.logger.Error("failed to create JetStream context", "error", err)
+		nc.Close()
+		return fmt.Errorf("failed to create JetStream context: %w", err)
+	}
+
+	c.nc = nc
+	c.js = js
+	c.logger.Info("connected to NATS with JetStream", "server", nc.ConnectedUrl())
+	return nil
+}
+
+// Publish sends a message to the specified subject via JetStream
+func (c *JetStreamClient) Publish(ctx context.Context, subject string, data interface{}) error {
+	if c.nc == nil {
+		return fmt.Errorf("NATS connection is not established")
+	}
+
+	if c.nc.IsClosed() {
+		return fmt.Errorf("NATS connection is closed")
+	}
+
+	payload, err := json.Marshal(data)
+	if err != nil {
+		c.logger.Error("failed to marshal data", "error", err)
+		return fmt.Errorf("failed to marshal data: %w", err)
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	_, err = c.js.Publish(ctx, subject, payload)
+	if err != nil {
+		c.logger.Error("failed to publish message", "subject", subject, "error", err)
+		return fmt.Errorf("failed to publish message: %w", err)
+	}
+
+	c.logger.Debug("message published via JetStream", "subject", subject, "size", len(payload))
+	return nil
+}
+
+// Close closes the NATS connection
+func (c *JetStreamClient) Close() error {
+	if c.nc == nil {
+		return nil
+	}
+
+	c.logger.Info("closing NATS connection")
+	c.nc.Close()
+	c.logger.Info("NATS connection closed")
+	return nil
+}
+
+// IsConnected returns true if client is connected
+func (c *JetStreamClient) IsConnected() bool {
+	return c.nc != nil && c.nc.IsConnected()
+}
+
+// Ensure JetStreamClient implements NATSClientInterface
+var _ NATSClientInterface = (*JetStreamClient)(nil)
+
+// EnsureStream creates or updates a JetStream stream based on config file
+func (c *JetStreamClient) EnsureStream(ctx context.Context, configPath string) error {
+	if c.js == nil {
+		return fmt.Errorf("JetStream is not connected")
+	}
+
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		c.logger.Error("failed to read stream config file", "path", configPath, "error", err)
+		return fmt.Errorf("failed to read stream config file: %w", err)
+	}
+
+	var streamCfg jetstream.StreamConfig
+	if err := json.Unmarshal(configData, &streamCfg); err != nil {
+		c.logger.Error("failed to parse stream config", "path", configPath, "error", err)
+		return fmt.Errorf("failed to parse stream config: %w", err)
+	}
+
+	_, err = c.js.CreateOrUpdateStream(ctx, streamCfg)
+	if err != nil {
+		c.logger.Error("failed to create/update stream", "name", streamCfg.Name, "error", err)
+		return fmt.Errorf("failed to create/update stream: %w", err)
+	}
+
+	c.logger.Info("stream created/updated", "name", streamCfg.Name)
+	return nil
+}
 
 type publishTask struct {
 	subject string

@@ -95,7 +95,8 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "valid config",
 			config: Config{
-				Mode: "first",
+				Mode:   "first",
+				Engine: EngineCore,
 				Routes: []Route{
 					{
 						Condition: "update.message != nil",
@@ -117,6 +118,7 @@ func TestConfig_Validate(t *testing.T) {
 			name: "empty routes is valid",
 			config: Config{
 				Mode:                   "first",
+				Engine:                 EngineCore,
 				Routes:                 []Route{},
 				TelegramToken:          "test-token",
 				NATSURL:                "nats://localhost:4222",
@@ -129,7 +131,8 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "invalid mode",
 			config: Config{
-				Mode: "invalid",
+				Mode:   "invalid",
+				Engine: EngineCore,
 				Routes: []Route{
 					{
 						Condition: "update.message != nil",
@@ -151,7 +154,8 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "missing telegram token",
 			config: Config{
-				Mode: "first",
+				Mode:   "first",
+				Engine: EngineCore,
 				Routes: []Route{
 					{
 						Condition: "update.message != nil",
@@ -172,7 +176,8 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "missing nats url",
 			config: Config{
-				Mode: "first",
+				Mode:   "first",
+				Engine: EngineCore,
 				Routes: []Route{
 					{
 						Condition: "update.message != nil",
@@ -194,6 +199,7 @@ func TestConfig_Validate(t *testing.T) {
 			name: "invalid route_workers",
 			config: Config{
 				Mode:                   "first",
+				Engine:                 EngineCore,
 				Routes:                 []Route{},
 				TelegramToken:          "test-token",
 				NATSURL:                "nats://localhost:4222",
@@ -208,6 +214,7 @@ func TestConfig_Validate(t *testing.T) {
 			name: "invalid publish_workers",
 			config: Config{
 				Mode:                   "first",
+				Engine:                 EngineCore,
 				Routes:                 []Route{},
 				TelegramToken:          "test-token",
 				NATSURL:                "nats://localhost:4222",
@@ -222,6 +229,7 @@ func TestConfig_Validate(t *testing.T) {
 			name: "invalid publish_shutdown_timeout",
 			config: Config{
 				Mode:                   "first",
+				Engine:                 EngineCore,
 				Routes:                 []Route{},
 				TelegramToken:          "test-token",
 				NATSURL:                "nats://localhost:4222",

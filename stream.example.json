@@ -1,0 +1,18 @@
+{
+  "Name": "TELEGRAM",
+  "Description": "Stream for Telegram bot updates",
+  "Subjects": [
+    "telegram.>"
+  ],
+  "Retention": "limits",
+  "Storage": "file",
+  "MaxConsumers": -1,
+  "MaxMsgs": -1,
+  "MaxBytes": -1,
+  "MaxAge": 0,
+  "MaxMsgSize": -1,
+  "Discard": "old",
+  "Replicas": 1,
+  "NoAck": false,
+  "DuplicateWindow": 0
+}

@@ -1,5 +1,9 @@
 # Example configuration file for telegram-nats-bridge
 
+# Engine: "core" - use Core NATS (default)
+#          "jetstream" - use JetStream for persistence
+engine: "core"
+
 # Mode: "first" - send to first matched route's subject
 #        "all"  - send to all matched routes' subjects
 mode: "first"
@@ -12,6 +16,10 @@ publish_workers: 5
 
 # Timeout in seconds for graceful shutdown of publisher (default: 10)
 publish_shutdown_timeout: 10
+
+# JetStream configuration (required only if engine: "jetstream")
+# jetstream:
+#   stream_config: "./stream-config.json"
 
 # Routes for message routing
 # Each route has:
