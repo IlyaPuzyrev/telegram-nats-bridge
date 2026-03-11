@@ -16,6 +16,12 @@ type compiledRoute struct {
 	subjectType   RouteSubjectType
 	subjectStatic string
 	subjectExpr   *vm.Program
+	topicType     RouteSubjectType
+	topicStatic   string
+	topicExpr     *vm.Program
+	keyType       RouteSubjectType
+	keyStatic     string
+	keyExpr       *vm.Program
 }
 
 type Router struct {
@@ -45,21 +51,72 @@ func NewRouter(routes []Route, mode string, routeWorkers int, logger *slog.Logge
 			var subjectStatic string
 			var subjectExpr *vm.Program
 
-			switch route.Subject.Type {
-			case SubjectTypeString:
-				subjectStatic = route.Subject.Value
-			case SubjectTypeExpr:
-				subjectExpr, err = expr.Compile(route.Subject.Value, expr.Env(env))
-				if err != nil {
-					return fmt.Errorf("failed to compile subject expression for route[%d]: %w", i, err)
+			if route.Subject != nil {
+				switch route.Subject.Type {
+				case SubjectTypeString:
+					subjectStatic = route.Subject.Value
+				case SubjectTypeExpr:
+					subjectExpr, err = expr.Compile(route.Subject.Value, expr.Env(env))
+					if err != nil {
+						return fmt.Errorf("failed to compile subject expression for route[%d]: %w", i, err)
+					}
 				}
+			}
+
+			var topicStatic string
+			var topicExpr *vm.Program
+
+			if route.Topic != nil {
+				switch route.Topic.Type {
+				case SubjectTypeString:
+					topicStatic = route.Topic.Value
+				case SubjectTypeExpr:
+					topicExpr, err = expr.Compile(route.Topic.Value, expr.Env(env))
+					if err != nil {
+						return fmt.Errorf("failed to compile topic expression for route[%d]: %w", i, err)
+					}
+				}
+			}
+
+			var keyStatic string
+			var keyExpr *vm.Program
+
+			if route.Key != nil {
+				switch route.Key.Type {
+				case SubjectTypeString:
+					keyStatic = route.Key.Value
+				case SubjectTypeExpr:
+					keyExpr, err = expr.Compile(route.Key.Value, expr.Env(env))
+					if err != nil {
+						return fmt.Errorf("failed to compile key expression for route[%d]: %w", i, err)
+					}
+				}
+			}
+
+			subjectType := RouteSubjectType("")
+			if route.Subject != nil {
+				subjectType = route.Subject.Type
+			}
+			topicType := RouteSubjectType("")
+			if route.Topic != nil {
+				topicType = route.Topic.Type
+			}
+			keyType := RouteSubjectType("")
+			if route.Key != nil {
+				keyType = route.Key.Type
 			}
 
 			compiledRoutes[i] = compiledRoute{
 				condition:     condition,
-				subjectType:   route.Subject.Type,
+				subjectType:   subjectType,
 				subjectStatic: subjectStatic,
 				subjectExpr:   subjectExpr,
+				topicType:     topicType,
+				topicStatic:   topicStatic,
+				topicExpr:     topicExpr,
+				keyType:       keyType,
+				keyStatic:     keyStatic,
+				keyExpr:       keyExpr,
 			}
 
 			return nil
@@ -83,11 +140,11 @@ func NewRouter(routes []Route, mode string, routeWorkers int, logger *slog.Logge
 	}, nil
 }
 
-func (r *Router) Route(update Update) ([]string, error) {
+func (r *Router) Route(update Update) ([]Destination, error) {
 	type routingResult struct {
 		idx  int
 		cond bool
-		subj string
+		dest Destination
 		err  error
 	}
 
@@ -115,19 +172,48 @@ func (r *Router) Route(update Update) ([]string, error) {
 					return
 				}
 
-				subj := ""
-				switch route.subjectType {
-				case SubjectTypeString:
-					subj = route.subjectStatic
-				case SubjectTypeExpr:
-					subj, err = runExpr[string](route.subjectExpr, update)
-					if err != nil {
-						resCh <- routingResult{idx: idx, err: err}
-						return
+				dest := Destination{}
+
+				if route.subjectExpr != nil || route.subjectStatic != "" {
+					switch route.subjectType {
+					case SubjectTypeString:
+						dest.Subject = route.subjectStatic
+					case SubjectTypeExpr:
+						dest.Subject, err = runExpr[string](route.subjectExpr, update)
+						if err != nil {
+							resCh <- routingResult{idx: idx, err: err}
+							return
+						}
 					}
 				}
 
-				resCh <- routingResult{idx: idx, cond: true, subj: subj}
+				if route.topicExpr != nil || route.topicStatic != "" {
+					switch route.topicType {
+					case SubjectTypeString:
+						dest.Topic = route.topicStatic
+					case SubjectTypeExpr:
+						dest.Topic, err = runExpr[string](route.topicExpr, update)
+						if err != nil {
+							resCh <- routingResult{idx: idx, err: err}
+							return
+						}
+					}
+				}
+
+				if route.keyExpr != nil || route.keyStatic != "" {
+					switch route.keyType {
+					case SubjectTypeString:
+						dest.Key = route.keyStatic
+					case SubjectTypeExpr:
+						dest.Key, err = runExpr[string](route.keyExpr, update)
+						if err != nil {
+							resCh <- routingResult{idx: idx, err: err}
+							return
+						}
+					}
+				}
+
+				resCh <- routingResult{idx: idx, cond: true, dest: dest}
 			})
 		}
 
@@ -146,19 +232,22 @@ func (r *Router) Route(update Update) ([]string, error) {
 		if r.mode == "first" && match {
 			for _, rr := range results {
 				if rr.cond {
-					return []string{rr.subj}, nil
+					return []Destination{rr.dest}, nil
 				}
 			}
 		}
 	}
 
 	seen := make(map[string]bool)
-	var final []string
+	var final []Destination
 
 	for _, rr := range results {
-		if rr.cond && !seen[rr.subj] {
-			seen[rr.subj] = true
-			final = append(final, rr.subj)
+		if rr.cond {
+			key := rr.dest.Subject + rr.dest.Topic + rr.dest.Key
+			if !seen[key] {
+				seen[key] = true
+				final = append(final, rr.dest)
+			}
 		}
 	}
 

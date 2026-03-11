@@ -24,6 +24,26 @@ tasks:
     cmds:
       - go test ./...
 
+  nats-up:
+    desc: Start NATS container
+    cmds:
+      - docker compose up -d nats
+
+  nats-down:
+    desc: Stop NATS container
+    cmds:
+      - docker compose stop nats
+
+  kafka-up:
+    desc: Start Kafka container
+    cmds:
+      - docker compose up -d kafka
+
+  kafka-down:
+    desc: Stop Kafka container
+    cmds:
+      - docker compose stop kafka
+
   nats-box:
     desc: Subscribe to NATS subject (requires running nats container)
     cmds:

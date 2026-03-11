@@ -15,32 +15,35 @@ func TestLoadConfig_WithFile(t *testing.T) {
 		Level: slog.LevelError,
 	}))
 
-	// Clear environment variables that might interfere with token and URL
 	t.Setenv("TELEGRAM_BOT_TOKEN", "")
 	t.Setenv("NATS_URL", "")
+	t.Setenv("KAFKA_BROKERS", "")
 
-	// Create temporary config file
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	configContent := `
+broker: nats
 mode: first
+nats:
+  url: nats://test:4222
+  engine: core
 routes:
   - condition: "update.message != nil"
     subject:
       type: string
       value: telegram.messages
 telegram_token: test-token
-nats_url: nats://test:4222
 `
 	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
 
 	cfg, err := LoadConfig(configPath, logger)
 	require.NoError(t, err)
 	assert.Equal(t, "first", cfg.Mode)
+	assert.Equal(t, BrokerNATS, cfg.Broker)
 	assert.Equal(t, 1, len(cfg.Routes))
 	assert.Equal(t, "test-token", cfg.TelegramToken)
-	assert.Equal(t, "nats://test:4222", cfg.NATSURL)
+	assert.Equal(t, "nats://test:4222", cfg.NATS.URL)
 }
 
 func TestLoadConfig_FromEnvOnly(t *testing.T) {
@@ -48,13 +51,19 @@ func TestLoadConfig_FromEnvOnly(t *testing.T) {
 		Level: slog.LevelError,
 	}))
 
-	// Create temporary config file with routes only
-	// telegram_token and nats_url will come from env
+	t.Setenv("TELEGRAM_BOT_TOKEN", "env-token")
+	t.Setenv("NATS_URL", "nats://env:4222")
+	t.Setenv("KAFKA_BROKERS", "")
+
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	configContent := `
+broker: nats
 mode: all
+nats:
+  url: nats://env:4222
+  engine: core
 routes:
   - condition: "update.message != nil"
     subject:
@@ -63,16 +72,14 @@ routes:
 `
 	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
 
-	// Set environment variables for token and URL
 	t.Setenv("TELEGRAM_BOT_TOKEN", "env-token")
-	t.Setenv("NATS_URL", "nats://env:4222")
 
 	cfg, err := LoadConfig(configPath, logger)
 	require.NoError(t, err)
 	assert.Equal(t, "all", cfg.Mode)
 	assert.Equal(t, 1, len(cfg.Routes))
 	assert.Equal(t, "env-token", cfg.TelegramToken)
-	assert.Equal(t, "nats://env:4222", cfg.NATSURL)
+	assert.Equal(t, "nats://env:4222", cfg.NATS.URL)
 }
 
 func TestLoadConfig_FileNotFound(t *testing.T) {
@@ -93,21 +100,48 @@ func TestConfig_Validate(t *testing.T) {
 		errMsg  string
 	}{
 		{
-			name: "valid config",
+			name: "valid nats config",
 			config: Config{
 				Mode:   "first",
-				Engine: EngineCore,
+				Broker: BrokerNATS,
+				NATS: &NATSConfig{
+					URL:    "nats://localhost:4222",
+					Engine: EngineCore,
+				},
 				Routes: []Route{
 					{
 						Condition: "update.message != nil",
-						Subject: RouteSubject{
+						Subject: &RouteSubject{
 							Type:  SubjectTypeString,
 							Value: "telegram.messages",
 						},
 					},
 				},
 				TelegramToken:          "test-token",
-				NATSURL:                "nats://localhost:4222",
+				RouteWorkers:           5,
+				PublishWorkers:         5,
+				PublishShutdownTimeout: 10,
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid kafka config",
+			config: Config{
+				Mode:   "first",
+				Broker: BrokerKafka,
+				Kafka: &KafkaConfig{
+					Brokers: []string{"localhost:9092"},
+				},
+				Routes: []Route{
+					{
+						Condition: "update.message != nil",
+						Topic: &RouteTopic{
+							Type:  SubjectTypeString,
+							Value: "telegram.messages",
+						},
+					},
+				},
+				TelegramToken:          "test-token",
 				RouteWorkers:           5,
 				PublishWorkers:         5,
 				PublishShutdownTimeout: 10,
@@ -117,11 +151,14 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "empty routes is valid",
 			config: Config{
-				Mode:                   "first",
-				Engine:                 EngineCore,
+				Mode:   "first",
+				Broker: BrokerNATS,
+				NATS: &NATSConfig{
+					URL:    "nats://localhost:4222",
+					Engine: EngineCore,
+				},
 				Routes:                 []Route{},
 				TelegramToken:          "test-token",
-				NATSURL:                "nats://localhost:4222",
 				RouteWorkers:           5,
 				PublishWorkers:         5,
 				PublishShutdownTimeout: 10,
@@ -132,18 +169,21 @@ func TestConfig_Validate(t *testing.T) {
 			name: "invalid mode",
 			config: Config{
 				Mode:   "invalid",
-				Engine: EngineCore,
+				Broker: BrokerNATS,
+				NATS: &NATSConfig{
+					URL:    "nats://localhost:4222",
+					Engine: EngineCore,
+				},
 				Routes: []Route{
 					{
 						Condition: "update.message != nil",
-						Subject: RouteSubject{
+						Subject: &RouteSubject{
 							Type:  SubjectTypeString,
 							Value: "telegram.messages",
 						},
 					},
 				},
 				TelegramToken:          "test-token",
-				NATSURL:                "nats://localhost:4222",
 				RouteWorkers:           5,
 				PublishWorkers:         5,
 				PublishShutdownTimeout: 10,
@@ -152,20 +192,48 @@ func TestConfig_Validate(t *testing.T) {
 			errMsg:  "mode must be 'first' or 'all'",
 		},
 		{
-			name: "missing telegram token",
+			name: "valid config with broker nats",
 			config: Config{
 				Mode:   "first",
-				Engine: EngineCore,
+				Broker: BrokerNATS,
+				NATS: &NATSConfig{
+					URL:    "nats://localhost:4222",
+					Engine: EngineCore,
+				},
 				Routes: []Route{
 					{
 						Condition: "update.message != nil",
-						Subject: RouteSubject{
+						Subject: &RouteSubject{
 							Type:  SubjectTypeString,
 							Value: "telegram.messages",
 						},
 					},
 				},
-				NATSURL:                "nats://localhost:4222",
+				TelegramToken:          "test-token",
+				RouteWorkers:           5,
+				PublishWorkers:         5,
+				PublishShutdownTimeout: 10,
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing telegram token",
+			config: Config{
+				Mode:   "first",
+				Broker: BrokerNATS,
+				NATS: &NATSConfig{
+					URL:    "nats://localhost:4222",
+					Engine: EngineCore,
+				},
+				Routes: []Route{
+					{
+						Condition: "update.message != nil",
+						Subject: &RouteSubject{
+							Type:  SubjectTypeString,
+							Value: "telegram.messages",
+						},
+					},
+				},
 				RouteWorkers:           5,
 				PublishWorkers:         5,
 				PublishShutdownTimeout: 10,
@@ -174,14 +242,14 @@ func TestConfig_Validate(t *testing.T) {
 			errMsg:  "telegram token is required",
 		},
 		{
-			name: "missing nats url",
+			name: "missing nats config when broker is nats",
 			config: Config{
 				Mode:   "first",
-				Engine: EngineCore,
+				Broker: BrokerNATS,
 				Routes: []Route{
 					{
 						Condition: "update.message != nil",
-						Subject: RouteSubject{
+						Subject: &RouteSubject{
 							Type:  SubjectTypeString,
 							Value: "telegram.messages",
 						},
@@ -193,16 +261,41 @@ func TestConfig_Validate(t *testing.T) {
 				PublishShutdownTimeout: 10,
 			},
 			wantErr: true,
-			errMsg:  "nats url is required",
+			errMsg:  "nats configuration is required",
+		},
+		{
+			name: "missing kafka config when broker is kafka",
+			config: Config{
+				Mode:   "first",
+				Broker: BrokerKafka,
+				Routes: []Route{
+					{
+						Condition: "update.message != nil",
+						Topic: &RouteTopic{
+							Type:  SubjectTypeString,
+							Value: "telegram.messages",
+						},
+					},
+				},
+				TelegramToken:          "test-token",
+				RouteWorkers:           5,
+				PublishWorkers:         5,
+				PublishShutdownTimeout: 10,
+			},
+			wantErr: true,
+			errMsg:  "kafka configuration is required",
 		},
 		{
 			name: "invalid route_workers",
 			config: Config{
-				Mode:                   "first",
-				Engine:                 EngineCore,
+				Mode:   "first",
+				Broker: BrokerNATS,
+				NATS: &NATSConfig{
+					URL:    "nats://localhost:4222",
+					Engine: EngineCore,
+				},
 				Routes:                 []Route{},
 				TelegramToken:          "test-token",
-				NATSURL:                "nats://localhost:4222",
 				RouteWorkers:           0,
 				PublishWorkers:         5,
 				PublishShutdownTimeout: 10,
@@ -213,11 +306,14 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "invalid publish_workers",
 			config: Config{
-				Mode:                   "first",
-				Engine:                 EngineCore,
+				Mode:   "first",
+				Broker: BrokerNATS,
+				NATS: &NATSConfig{
+					URL:    "nats://localhost:4222",
+					Engine: EngineCore,
+				},
 				Routes:                 []Route{},
 				TelegramToken:          "test-token",
-				NATSURL:                "nats://localhost:4222",
 				RouteWorkers:           5,
 				PublishWorkers:         -1,
 				PublishShutdownTimeout: 10,
@@ -228,17 +324,63 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "invalid publish_shutdown_timeout",
 			config: Config{
-				Mode:                   "first",
-				Engine:                 EngineCore,
+				Mode:   "first",
+				Broker: BrokerNATS,
+				NATS: &NATSConfig{
+					URL:    "nats://localhost:4222",
+					Engine: EngineCore,
+				},
 				Routes:                 []Route{},
 				TelegramToken:          "test-token",
-				NATSURL:                "nats://localhost:4222",
 				RouteWorkers:           5,
 				PublishWorkers:         5,
 				PublishShutdownTimeout: 0,
 			},
 			wantErr: true,
 			errMsg:  "publish_shutdown_timeout must be > 0",
+		},
+		{
+			name: "nats route missing subject",
+			config: Config{
+				Mode:   "first",
+				Broker: BrokerNATS,
+				NATS: &NATSConfig{
+					URL:    "nats://localhost:4222",
+					Engine: EngineCore,
+				},
+				Routes: []Route{
+					{
+						Condition: "update.message != nil",
+					},
+				},
+				TelegramToken:          "test-token",
+				RouteWorkers:           5,
+				PublishWorkers:         5,
+				PublishShutdownTimeout: 10,
+			},
+			wantErr: true,
+			errMsg:  "subject is required when broker is 'nats'",
+		},
+		{
+			name: "kafka route missing topic",
+			config: Config{
+				Mode:   "first",
+				Broker: BrokerKafka,
+				Kafka: &KafkaConfig{
+					Brokers: []string{"localhost:9092"},
+				},
+				Routes: []Route{
+					{
+						Condition: "update.message != nil",
+					},
+				},
+				TelegramToken:          "test-token",
+				RouteWorkers:           5,
+				PublishWorkers:         5,
+				PublishShutdownTimeout: 10,
+			},
+			wantErr: true,
+			errMsg:  "topic is required when broker is 'kafka'",
 		},
 	}
 

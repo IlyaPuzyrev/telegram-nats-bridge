@@ -1,59 +1,84 @@
-# Example configuration file for telegram-nats-bridge
+# Example configuration file for telegram-broker-bridge
 
-# Engine: "core" - use Core NATS (default)
-#          "jetstream" - use JetStream for persistence
-engine: "core"
+# Broker: "nats" (default) or "kafka"
+broker: "nats"
 
-# Mode: "first" - send to first matched route's subject
-#        "all"  - send to all matched routes' subjects
+# NATS configuration (required if broker is "nats")
+nats:
+  # URL: NATS server URL (can also be set via NATS_URL env)
+  url: "nats://localhost:4222"
+  # Engine: "core" (default) or "jetstream"
+  engine: "core"
+  # JetStream configuration (required only if engine is "jetstream")
+  # jetstream:
+  #   stream_config: "./stream-config.json"
+
+# Kafka configuration (required if broker is "kafka")
+# kafka:
+#   # Brokers: list of Kafka broker addresses (can also be set via KAFKA_BROKERS env, comma-separated)
+#   brokers:
+#     - "localhost:9092"
+#   # Async: async producing (default: false)
+#   async: false
+#   # AckRequired: -1=all, 0=none, 1=leader (default: -1)
+#   ack_required: -1
+#   # BatchSize: messages per batch (default: 0)
+#   batch_size: 0
+#   # BatchBytes: bytes per batch (default: 1048576)
+#   batch_bytes: 1048576
+
+# Mode: "first" - send to first matched route's subject/topic
+#       "all"  - send to all matched routes' subjects/topics
 mode: "first"
 
 # Number of concurrent workers for route processing (default: 5)
 route_workers: 5
 
-# Number of concurrent workers for publishing to NATS (default: 5)
+# Number of concurrent workers for publishing to broker (default: 5)
 publish_workers: 5
 
 # Timeout in seconds for graceful shutdown of publisher (default: 10)
 publish_shutdown_timeout: 10
 
-# JetStream configuration (required only if engine: "jetstream")
-# jetstream:
-#   stream_config: "./stream-config.json"
-
 # Routes for message routing
 # Each route has:
 #   condition: expr condition (returns bool)
-#   subject: destination subject
+#   subject: destination subject (for NATS)
 #     type: "string" (static) or "expr" (dynamic)
 #     value: subject string or expr program
+#   topic: destination topic (for Kafka)
+#     type: "string" (static) or "expr" (dynamic)
+#     value: topic string or expr program
+#   key: partition key (for Kafka, optional)
+#     type: "string" or "expr"
+#     value: key string or expr program
 routes:
-  # Messages from specific user by ID (dynamic subject)
-  - condition: "update.message?.from?.id != nil"
-    subject:
-      type: "expr"
-      value: "sprintf(\"telegram.messages.%v\", update.message.from.id)"
-
-  # Edited messages
-  - condition: "update.edited_message != nil"
-    subject:
-      type: "string"
-      value: "telegram.edited"
-
-  # Callback queries
-  - condition: "update.callback_query != nil"
-    subject:
-      type: "string"
-      value: "telegram.callbacks"
-
-  # All messages (catch-all)
-  # - condition: "update.message != nil"
+  # NATS example: Messages from specific user by ID (dynamic subject)
+  # - condition: "update.message?.from?.id != nil"
   #   subject:
+  #     type: "expr"
+  #     value: "sprintf(\"telegram.messages.%v\", update.message.from.id)"
+
+  # NATS example: Edited messages
+  # - condition: "update.edited_message != nil"
+  #   subject:
+  #     type: "string"
+  #     value: "telegram.edited"
+
+  # Kafka example: Messages to specific topic
+  # - condition: "update.message != nil"
+  #   topic:
   #     type: "string"
   #     value: "telegram.messages"
 
+  # Kafka example: Messages with dynamic topic and key
+  # - condition: "update.message != nil"
+  #   topic:
+  #     type: "expr"
+  #     value: "sprintf(\"telegram.messages.%v\", update.message.from.id)"
+  #   key:
+  #     type: "expr"
+  #     value: "sprintf(\"%v\", update.message.from.id)"
+
 # Optional: Telegram bot token (can also be set via TELEGRAM_BOT_TOKEN env)
 # telegram_token: "your-bot-token"
-
-# Optional: NATS server URL (can also be set via NATS_URL env)
-# nats_url: "nats://localhost:4222"

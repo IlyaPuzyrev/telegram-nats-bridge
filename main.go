@@ -122,41 +122,57 @@ func runBridge(cmd *cobra.Command, args []string) {
 		"username", botInfo.Username,
 		"name", botInfo.FirstName)
 
-	// Create and connect NATS client based on engine type
-	var natsClient NATSClientInterface
+	// Create and connect broker client based on broker type
+	var brokerClient BrokerInterface
 
 	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	switch cfg.Engine {
-	case EngineJetStream:
-		natsClient = NewJetStreamClient(cfg.NATSURL, logger)
-		if err := natsClient.Connect(ctx); err != nil {
-			logger.Error("failed to connect to NATS with JetStream", "error", err)
+	switch cfg.Broker {
+	case BrokerNATS:
+		switch cfg.NATS.Engine {
+		case EngineJetStream:
+			brokerClient = NewJetStreamClient(cfg.NATS.URL, logger)
+			if err := brokerClient.Connect(ctx); err != nil {
+				logger.Error("failed to connect to NATS with JetStream", "error", err)
+				os.Exit(1)
+			}
+			defer brokerClient.Close()
+
+			if err := brokerClient.(*JetStreamClient).EnsureStream(ctx, cfg.NATS.JetStream.StreamConfig); err != nil {
+				logger.Error("failed to ensure JetStream stream", "error", err)
+				os.Exit(1)
+			}
+
+			logger.Info("NATS connected with JetStream", "url", cfg.NATS.URL, "stream_config", cfg.NATS.JetStream.StreamConfig)
+
+		case EngineCore:
+			brokerClient = NewNATSClient(cfg.NATS.URL, logger)
+			if err := brokerClient.Connect(ctx); err != nil {
+				logger.Error("failed to connect to NATS", "error", err)
+				os.Exit(1)
+			}
+			defer brokerClient.Close()
+
+			logger.Info("NATS connected", "url", cfg.NATS.URL)
+		}
+
+	case BrokerKafka:
+		kafkaCfg := KafkaClientConfig{
+			Brokers:     cfg.Kafka.Brokers,
+			Async:       cfg.Kafka.Async,
+			AckRequired: cfg.Kafka.AckRequired,
+			BatchSize:   cfg.Kafka.BatchSize,
+			BatchBytes:  cfg.Kafka.BatchBytes,
+		}
+		brokerClient = NewKafkaClient(kafkaCfg, logger)
+		if err := brokerClient.Connect(ctx); err != nil {
+			logger.Error("failed to connect to Kafka", "error", err)
 			os.Exit(1)
 		}
-		defer natsClient.Close()
+		defer brokerClient.Close()
 
-		if err := natsClient.(*JetStreamClient).EnsureStream(ctx, cfg.JetStream.StreamConfig); err != nil {
-			logger.Error("failed to ensure JetStream stream", "error", err)
-			os.Exit(1)
-		}
-
-		logger.Info("NATS connected with JetStream", "url", cfg.NATSURL, "stream_config", cfg.JetStream.StreamConfig)
-
-	case EngineCore:
-		natsClient = NewNATSClient(cfg.NATSURL, logger)
-		if err := natsClient.Connect(ctx); err != nil {
-			logger.Error("failed to connect to NATS", "error", err)
-			os.Exit(1)
-		}
-		defer natsClient.Close()
-
-		logger.Info("NATS connected", "url", cfg.NATSURL)
-
-	default:
-		logger.Error("unknown engine type", "engine", cfg.Engine)
-		os.Exit(1)
+		logger.Info("Kafka connected", "brokers", cfg.Kafka.Brokers)
 	}
 
 	// Create router
@@ -167,7 +183,7 @@ func runBridge(cmd *cobra.Command, args []string) {
 	}
 
 	// Create publisher
-	publisher := NewPublisher(cfg.PublishWorkers, cfg.PublishShutdownTimeout, natsClient, logger)
+	publisher := NewPublisher(cfg.PublishWorkers, cfg.PublishShutdownTimeout, brokerClient, logger)
 	publisher.Start()
 
 	// Start polling for updates
@@ -186,7 +202,7 @@ func runBridge(cmd *cobra.Command, args []string) {
 		cancel()
 	}()
 
-	// Poll for updates and publish to NATS
+	// Poll for updates and publish to broker
 	var offset int64 = 0
 	for {
 		select {
@@ -223,14 +239,14 @@ func runBridge(cmd *cobra.Command, args []string) {
 					"update_id", updateID,
 					"has_message", hasMessage)
 
-				subjects, err := router.Route(update)
+				destinations, err := router.Route(update)
 				if err != nil {
 					logger.Error("failed to route update", "error", err, "update_id", updateID)
 					return
 				}
 
-				for _, subject := range subjects {
-					publisher.Publish(subject, update)
+				for _, dest := range destinations {
+					publisher.Publish(dest, update)
 				}
 			}(update)
 		}

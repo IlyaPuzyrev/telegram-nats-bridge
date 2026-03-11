@@ -18,7 +18,7 @@ func TestNewRouter(t *testing.T) {
 		routes := []Route{
 			{
 				Condition: "update.message != nil",
-				Subject: RouteSubject{
+				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.messages",
 				},
@@ -33,7 +33,7 @@ func TestNewRouter(t *testing.T) {
 		routes := []Route{
 			{
 				Condition: "update.message.!!!",
-				Subject: RouteSubject{
+				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.messages",
 				},
@@ -48,7 +48,7 @@ func TestNewRouter(t *testing.T) {
 		routes := []Route{
 			{
 				Condition: "update.message != nil",
-				Subject: RouteSubject{
+				Subject: &RouteSubject{
 					Type:  SubjectTypeExpr,
 					Value: "sprintf(!!!)",
 				},
@@ -76,14 +76,14 @@ func TestRouter_Route(t *testing.T) {
 		routes := []Route{
 			{
 				Condition: "update.message != nil",
-				Subject: RouteSubject{
+				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.messages",
 				},
 			},
 			{
 				Condition: "update.callback_query != nil",
-				Subject: RouteSubject{
+				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.callbacks",
 				},
@@ -99,23 +99,23 @@ func TestRouter_Route(t *testing.T) {
 			},
 		}
 
-		subjects, err := router.Route(update)
+		dests, err := router.Route(update)
 		require.NoError(t, err)
-		assert.Equal(t, []string{"telegram.messages"}, subjects)
+		assert.Equal(t, []Destination{{Subject: "telegram.messages"}}, dests)
 	})
 
 	t.Run("mode first - second match", func(t *testing.T) {
 		routes := []Route{
 			{
 				Condition: "update.message != nil",
-				Subject: RouteSubject{
+				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.messages",
 				},
 			},
 			{
 				Condition: "update.callback_query != nil",
-				Subject: RouteSubject{
+				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.callbacks",
 				},
@@ -131,23 +131,23 @@ func TestRouter_Route(t *testing.T) {
 			},
 		}
 
-		subjects, err := router.Route(update)
+		dests, err := router.Route(update)
 		require.NoError(t, err)
-		assert.Equal(t, []string{"telegram.callbacks"}, subjects)
+		assert.Equal(t, []Destination{{Subject: "telegram.callbacks"}}, dests)
 	})
 
 	t.Run("mode all - multiple matches", func(t *testing.T) {
 		routes := []Route{
 			{
 				Condition: "update.message != nil",
-				Subject: RouteSubject{
+				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.messages",
 				},
 			},
 			{
 				Condition: "update.message.text != nil",
-				Subject: RouteSubject{
+				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.texts",
 				},
@@ -163,16 +163,16 @@ func TestRouter_Route(t *testing.T) {
 			},
 		}
 
-		subjects, err := router.Route(update)
+		dests, err := router.Route(update)
 		require.NoError(t, err)
-		assert.Equal(t, []string{"telegram.messages", "telegram.texts"}, subjects)
+		assert.Equal(t, []Destination{{Subject: "telegram.messages"}, {Subject: "telegram.texts"}}, dests)
 	})
 
 	t.Run("no match - empty result", func(t *testing.T) {
 		routes := []Route{
 			{
 				Condition: "update.message != nil",
-				Subject: RouteSubject{
+				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.messages",
 				},
@@ -188,16 +188,16 @@ func TestRouter_Route(t *testing.T) {
 			},
 		}
 
-		subjects, err := router.Route(update)
+		dests, err := router.Route(update)
 		require.NoError(t, err)
-		assert.Empty(t, subjects)
+		assert.Empty(t, dests)
 	})
 
 	t.Run("dynamic subject with expr", func(t *testing.T) {
 		routes := []Route{
 			{
 				Condition: "update.message != nil",
-				Subject: RouteSubject{
+				Subject: &RouteSubject{
 					Type:  SubjectTypeExpr,
 					Value: "sprintf(\"telegram.%d.messages\", update.message.from.id)",
 				},
@@ -216,16 +216,16 @@ func TestRouter_Route(t *testing.T) {
 			},
 		}
 
-		subjects, err := router.Route(update)
+		dests, err := router.Route(update)
 		require.NoError(t, err)
-		assert.Equal(t, []string{"telegram.12345.messages"}, subjects)
+		assert.Equal(t, []Destination{{Subject: "telegram.12345.messages"}}, dests)
 	})
 
 	t.Run("empty update", func(t *testing.T) {
 		routes := []Route{
 			{
 				Condition: "update.message != nil",
-				Subject: RouteSubject{
+				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.messages",
 				},
@@ -238,8 +238,40 @@ func TestRouter_Route(t *testing.T) {
 			"update_id": 1,
 		}
 
-		subjects, err := router.Route(update)
+		dests, err := router.Route(update)
 		require.NoError(t, err)
-		assert.Empty(t, subjects)
+		assert.Empty(t, dests)
+	})
+
+	t.Run("kafka routes with topic and key", func(t *testing.T) {
+		routes := []Route{
+			{
+				Condition: "update.message != nil",
+				Topic: &RouteTopic{
+					Type:  SubjectTypeString,
+					Value: "telegram.messages",
+				},
+				Key: &RouteKey{
+					Type:  SubjectTypeExpr,
+					Value: "sprintf(\"%v\", update.message.from.id)",
+				},
+			},
+		}
+		router, err := NewRouter(routes, "first", 5, logger)
+		require.NoError(t, err)
+
+		update := Update{
+			"update_id": 1,
+			"message": map[string]any{
+				"text": "hello",
+				"from": map[string]any{
+					"id": 12345,
+				},
+			},
+		}
+
+		dests, err := router.Route(update)
+		require.NoError(t, err)
+		assert.Equal(t, []Destination{{Topic: "telegram.messages", Key: "12345"}}, dests)
 	})
 }
