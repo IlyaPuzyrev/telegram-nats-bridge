@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/go-resty/resty/v2"
 )
 
@@ -21,9 +21,9 @@ type TelegramClientInterface interface {
 	// Returns updates, next offset (max update_id + 1), and error
 	GetUpdatesWithTimeout(ctx context.Context, offset int64, timeout int) ([]Update, int64, error)
 	// GetBotInfo retrieves information about the bot
-	GetBotInfo(ctx context.Context) (*User, error)
+	GetBotInfo(ctx context.Context) (*gotgbot.User, error)
 	// GetMe is alias for GetBotInfo
-	GetMe(ctx context.Context) (*User, error)
+	GetMe(ctx context.Context) (*gotgbot.User, error)
 }
 
 // TelegramClient implements TelegramClientInterface
@@ -103,17 +103,15 @@ func (c *TelegramClient) GetUpdatesWithTimeout(ctx context.Context, offset int64
 		return nil, offset, fmt.Errorf("telegram API error: status %d", resp.StatusCode())
 	}
 
-	// Parse JSON response with UseNumber to preserve integer precision
+	// Parse JSON response using gotgbot.Update
 	var response struct {
-		Ok          bool     `json:"ok"`
-		Result      []Update `json:"result,omitempty"`
-		ErrorCode   int      `json:"error_code,omitempty"`
-		Description string   `json:"description,omitempty"`
+		Ok          bool             `json:"ok"`
+		Result      []gotgbot.Update `json:"result,omitempty"`
+		ErrorCode   int              `json:"error_code,omitempty"`
+		Description string           `json:"description,omitempty"`
 	}
 
-	decoder := json.NewDecoder(bytes.NewReader(resp.Body()))
-	decoder.UseNumber()
-	if err := decoder.Decode(&response); err != nil {
+	if err := json.Unmarshal(resp.Body(), &response); err != nil {
 		c.logger.Error("failed to decode response", "error", err)
 		return nil, offset, fmt.Errorf("failed to decode response: %w", err)
 	}
@@ -131,10 +129,8 @@ func (c *TelegramClient) GetUpdatesWithTimeout(ctx context.Context, offset int64
 	// Calculate next offset (max update_id + 1)
 	nextOffset := offset
 	for _, update := range response.Result {
-		if updateID, ok := update["update_id"].(json.Number); ok {
-			if id, err := updateID.Int64(); err == nil && id >= nextOffset {
-				nextOffset = id + 1
-			}
+		if update.UpdateId >= nextOffset {
+			nextOffset = update.UpdateId + 1
 		}
 	}
 
@@ -142,19 +138,19 @@ func (c *TelegramClient) GetUpdatesWithTimeout(ctx context.Context, offset int64
 }
 
 // GetBotInfo retrieves information about the bot
-func (c *TelegramClient) GetBotInfo(ctx context.Context) (*User, error) {
+func (c *TelegramClient) GetBotInfo(ctx context.Context) (*gotgbot.User, error) {
 	return c.GetMe(ctx)
 }
 
 // GetMe retrieves information about the bot (alias for GetBotInfo)
-func (c *TelegramClient) GetMe(ctx context.Context) (*User, error) {
+func (c *TelegramClient) GetMe(ctx context.Context) (*gotgbot.User, error) {
 	c.logger.Debug("getting bot info")
 
 	type getMeResponse struct {
-		Ok          bool   `json:"ok"`
-		Result      *User  `json:"result,omitempty"`
-		ErrorCode   int    `json:"error_code,omitempty"`
-		Description string `json:"description,omitempty"`
+		Ok          bool          `json:"ok"`
+		Result      *gotgbot.User `json:"result,omitempty"`
+		ErrorCode   int           `json:"error_code,omitempty"`
+		Description string        `json:"description,omitempty"`
 	}
 
 	var response getMeResponse
@@ -182,7 +178,7 @@ func (c *TelegramClient) GetMe(ctx context.Context) (*User, error) {
 	}
 
 	c.logger.Info("bot info retrieved",
-		"id", response.Result.ID,
+		"id", response.Result.Id,
 		"username", response.Result.Username,
 		"first_name", response.Result.FirstName)
 

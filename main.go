@@ -118,7 +118,7 @@ func runBridge(cmd *cobra.Command, args []string) {
 	}
 
 	logger.Info("bot connected",
-		"id", botInfo.ID,
+		"id", botInfo.Id,
 		"username", botInfo.Username,
 		"name", botInfo.FirstName)
 
@@ -229,19 +229,14 @@ func runBridge(cmd *cobra.Command, args []string) {
 		}
 
 		for _, update := range updates {
-			go func(update map[string]any) {
-				var updateID int64
-				if idNum, ok := update["update_id"].(json.Number); ok {
-					updateID, _ = idNum.Int64()
-				}
-				_, hasMessage := update["message"]
+			go func(update Update) {
 				logger.Info("received update",
-					"update_id", updateID,
-					"has_message", hasMessage)
+					"update_id", update.UpdateId,
+					"has_message", update.Message != nil)
 
 				destinations, err := router.Route(update)
 				if err != nil {
-					logger.Error("failed to route update", "error", err, "update_id", updateID)
+					logger.Error("failed to route update", "error", err, "update_id", update.UpdateId)
 					return
 				}
 
@@ -311,7 +306,7 @@ func checkBot(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get bot info: %w", err)
 	}
 
-	logger.Info("bot connected", "username", botInfo.Username, "id", botInfo.ID)
+	logger.Info("bot connected", "username", botInfo.Username, "id", botInfo.Id)
 	logger.Info("send a message to the bot to see JSON output, press Ctrl+C to exit")
 
 	// Setup graceful shutdown

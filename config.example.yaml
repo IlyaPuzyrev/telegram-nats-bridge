@@ -54,31 +54,31 @@ publish_shutdown_timeout: 10
 #     value: key string or expr program
 routes:
   # NATS example: Messages from specific user by ID (dynamic subject)
-  # - condition: "update.message?.from?.id != nil"
+  # - condition: "update.Message?.From?.Id != nil"
   #   subject:
   #     type: "expr"
-  #     value: "sprintf(\"telegram.messages.%v\", update.message.from.id)"
+  #     value: "sprintf(\"telegram.messages.%v\", update.Message.From.Id)"
 
   # NATS example: Edited messages
-  # - condition: "update.edited_message != nil"
+  # - condition: "update.EditedMessage != nil"
   #   subject:
   #     type: "string"
   #     value: "telegram.edited"
 
   # Kafka example: Messages to specific topic
-  # - condition: "update.message != nil"
+  # - condition: "update.Message != nil"
   #   topic:
   #     type: "string"
   #     value: "telegram.messages"
 
   # Kafka example: Messages with dynamic topic and key
-  # - condition: "update.message != nil"
+  # - condition: "update.Message != nil"
   #   topic:
   #     type: "expr"
-  #     value: "sprintf(\"telegram.messages.%v\", update.message.from.id)"
+  #     value: "sprintf(\"telegram.messages.%v\", update.Message.From.Id)"
   #   key:
   #     type: "expr"
-  #     value: "sprintf(\"%v\", update.message.from.id)"
+  #     value: "sprintf(\"%v\", update.Message.From.Id)"
 
 # Optional: Telegram bot token (can also be set via TELEGRAM_BOT_TOKEN env)
 # telegram_token: "your-bot-token"

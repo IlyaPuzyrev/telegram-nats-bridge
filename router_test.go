@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -17,7 +18,7 @@ func TestNewRouter(t *testing.T) {
 	t.Run("valid routes", func(t *testing.T) {
 		routes := []Route{
 			{
-				Condition: "update.message != nil",
+				Condition: "update.Message != nil",
 				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.messages",
@@ -32,7 +33,7 @@ func TestNewRouter(t *testing.T) {
 	t.Run("invalid condition expr", func(t *testing.T) {
 		routes := []Route{
 			{
-				Condition: "update.message.!!!",
+				Condition: "update.Message.!!!",
 				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.messages",
@@ -47,7 +48,7 @@ func TestNewRouter(t *testing.T) {
 	t.Run("invalid subject expr", func(t *testing.T) {
 		routes := []Route{
 			{
-				Condition: "update.message != nil",
+				Condition: "update.Message != nil",
 				Subject: &RouteSubject{
 					Type:  SubjectTypeExpr,
 					Value: "sprintf(!!!)",
@@ -75,14 +76,14 @@ func TestRouter_Route(t *testing.T) {
 	t.Run("mode first - first match", func(t *testing.T) {
 		routes := []Route{
 			{
-				Condition: "update.message != nil",
+				Condition: "update.Message != nil",
 				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.messages",
 				},
 			},
 			{
-				Condition: "update.callback_query != nil",
+				Condition: "update.CallbackQuery != nil",
 				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.callbacks",
@@ -92,10 +93,10 @@ func TestRouter_Route(t *testing.T) {
 		router, err := NewRouter(routes, "first", 5, logger)
 		require.NoError(t, err)
 
-		update := Update{
-			"update_id": 1,
-			"message": map[string]any{
-				"text": "hello",
+		update := gotgbot.Update{
+			UpdateId: 1,
+			Message: &gotgbot.Message{
+				Text: "hello",
 			},
 		}
 
@@ -107,14 +108,14 @@ func TestRouter_Route(t *testing.T) {
 	t.Run("mode first - second match", func(t *testing.T) {
 		routes := []Route{
 			{
-				Condition: "update.message != nil",
+				Condition: "update.Message != nil",
 				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.messages",
 				},
 			},
 			{
-				Condition: "update.callback_query != nil",
+				Condition: "update.CallbackQuery != nil",
 				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.callbacks",
@@ -124,10 +125,11 @@ func TestRouter_Route(t *testing.T) {
 		router, err := NewRouter(routes, "first", 5, logger)
 		require.NoError(t, err)
 
-		update := Update{
-			"update_id": 1,
-			"callback_query": map[string]any{
-				"data": "test",
+		update := gotgbot.Update{
+			UpdateId: 1,
+			CallbackQuery: &gotgbot.CallbackQuery{
+				Id:   "123",
+				Data: "test",
 			},
 		}
 
@@ -139,14 +141,14 @@ func TestRouter_Route(t *testing.T) {
 	t.Run("mode all - multiple matches", func(t *testing.T) {
 		routes := []Route{
 			{
-				Condition: "update.message != nil",
+				Condition: "update.Message != nil",
 				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.messages",
 				},
 			},
 			{
-				Condition: "update.message.text != nil",
+				Condition: "update.Message.Text != nil",
 				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.texts",
@@ -156,10 +158,10 @@ func TestRouter_Route(t *testing.T) {
 		router, err := NewRouter(routes, "all", 5, logger)
 		require.NoError(t, err)
 
-		update := Update{
-			"update_id": 1,
-			"message": map[string]any{
-				"text": "hello",
+		update := gotgbot.Update{
+			UpdateId: 1,
+			Message: &gotgbot.Message{
+				Text: "hello",
 			},
 		}
 
@@ -171,7 +173,7 @@ func TestRouter_Route(t *testing.T) {
 	t.Run("no match - empty result", func(t *testing.T) {
 		routes := []Route{
 			{
-				Condition: "update.message != nil",
+				Condition: "update.Message != nil",
 				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.messages",
@@ -181,10 +183,11 @@ func TestRouter_Route(t *testing.T) {
 		router, err := NewRouter(routes, "first", 5, logger)
 		require.NoError(t, err)
 
-		update := Update{
-			"update_id": 1,
-			"callback_query": map[string]any{
-				"data": "test",
+		update := gotgbot.Update{
+			UpdateId: 1,
+			CallbackQuery: &gotgbot.CallbackQuery{
+				Id:   "123",
+				Data: "test",
 			},
 		}
 
@@ -196,22 +199,22 @@ func TestRouter_Route(t *testing.T) {
 	t.Run("dynamic subject with expr", func(t *testing.T) {
 		routes := []Route{
 			{
-				Condition: "update.message != nil",
+				Condition: "update.Message != nil",
 				Subject: &RouteSubject{
 					Type:  SubjectTypeExpr,
-					Value: "sprintf(\"telegram.%d.messages\", update.message.from.id)",
+					Value: "sprintf(\"telegram.%d.messages\", update.Message.From.Id)",
 				},
 			},
 		}
 		router, err := NewRouter(routes, "first", 5, logger)
 		require.NoError(t, err)
 
-		update := Update{
-			"update_id": 1,
-			"message": map[string]any{
-				"text": "hello",
-				"from": map[string]any{
-					"id": 12345,
+		update := gotgbot.Update{
+			UpdateId: 1,
+			Message: &gotgbot.Message{
+				Text: "hello",
+				From: &gotgbot.User{
+					Id: 12345,
 				},
 			},
 		}
@@ -224,7 +227,7 @@ func TestRouter_Route(t *testing.T) {
 	t.Run("empty update", func(t *testing.T) {
 		routes := []Route{
 			{
-				Condition: "update.message != nil",
+				Condition: "update.Message != nil",
 				Subject: &RouteSubject{
 					Type:  SubjectTypeString,
 					Value: "telegram.messages",
@@ -234,8 +237,8 @@ func TestRouter_Route(t *testing.T) {
 		router, err := NewRouter(routes, "first", 5, logger)
 		require.NoError(t, err)
 
-		update := Update{
-			"update_id": 1,
+		update := gotgbot.Update{
+			UpdateId: 1,
 		}
 
 		dests, err := router.Route(update)
@@ -246,26 +249,26 @@ func TestRouter_Route(t *testing.T) {
 	t.Run("kafka routes with topic and key", func(t *testing.T) {
 		routes := []Route{
 			{
-				Condition: "update.message != nil",
+				Condition: "update.Message != nil",
 				Topic: &RouteTopic{
 					Type:  SubjectTypeString,
 					Value: "telegram.messages",
 				},
 				Key: &RouteKey{
 					Type:  SubjectTypeExpr,
-					Value: "sprintf(\"%v\", update.message.from.id)",
+					Value: "sprintf(\"%v\", update.Message.From.Id)",
 				},
 			},
 		}
 		router, err := NewRouter(routes, "first", 5, logger)
 		require.NoError(t, err)
 
-		update := Update{
-			"update_id": 1,
-			"message": map[string]any{
-				"text": "hello",
-				"from": map[string]any{
-					"id": 12345,
+		update := gotgbot.Update{
+			UpdateId: 1,
+			Message: &gotgbot.Message{
+				Text: "hello",
+				From: &gotgbot.User{
+					Id: 12345,
 				},
 			},
 		}

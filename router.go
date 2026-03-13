@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
 	"golang.org/x/sync/errgroup"
@@ -256,7 +257,7 @@ func (r *Router) Route(update Update) ([]Destination, error) {
 
 var env = map[string]interface{}{
 	"sprintf": fmt.Sprintf,
-	"update":  Update{},
+	"update":  gotgbot.Update{},
 }
 
 func runExpr[T any](program *vm.Program, update Update) (T, error) {
