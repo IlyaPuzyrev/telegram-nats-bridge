@@ -11,8 +11,8 @@
 
 Запуск утилиты:
 ```bash
-./telegram-nats-bridge run --config config.yaml
-./telegram-nats-bridge check bot --config config.yaml
+./.bin/telegram-nats-bridge run --config config.yaml
+./.bin/telegram-nats-bridge check bot --config config.yaml
 ```
 
 ## Локальное тестирование с NATS
@@ -45,6 +45,8 @@ task nats-down
 ## Структура проекта
 
 Плоская структура, один общий package. Все файлы в корне проекта.
+
+Бинарники хранятся в директории `.bin/`.
 
 ## Зависимости
 
